@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>❤️ Catch My Love</title>
+<style>
+  :root{
+    --sky-top:#8fd3f4;
+    --sky-2:#bfe9f7;
+    --sky-3:#f6c6dd;
+    --sky-4:#dcc8f2;
+    --sky-bottom:#ffe3cf;
+    --pink-1:#ff8fb1;
+    --pink-2:#ff5c8a;
+    --purple-1:#b389f0;
+    --white-glow: rgba(255,255,255,0.85);
+    --text-dark:#5b3a52;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+    background: linear-gradient(180deg,
+      var(--sky-top) 0%,
+      var(--sky-2) 26%,
+      var(--sky-3) 52%,
+      var(--sky-4) 74%,
+      var(--sky-bottom) 100%);
+  }
+
+  /* ---------- CLOUDS ---------- */
+  .cloud-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .cloud {
+    position: absolute;
+    filter: blur(1px);
+  }
+  .cloud .puff {
+    position: absolute;
+    background: rgba(255,255,255,0.75);
+    border-radius: 50%;
+    box-shadow: 0 8px 20px rgba(120,110,160,0.12);
+  }
+
+  /* ---------- DECOR PARTICLES ---------- */
+  .decor-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .decor {
+    position: absolute;
+    will-change: transform, opacity;
+  }
+
+  /* ---------- HEADER UI ---------- */
+  .hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 18px 22px;
+    pointer-events: none;
+  }
+
+  .lives {
+    display: flex;
+    gap: 6px;
+    font-size: clamp(20px, 4vw, 30px);
+    padding: 8px 14px;
+    background: rgba(255,255,255,0.45);
+    border-radius: 30px;
+    box-shadow: 0 4px 14px rgba(150,90,130,0.15), inset 0 1px 2px rgba(255,255,255,0.8);
+    backdrop-filter: blur(6px);
+  }
+  .life-heart {
+    display: inline-block;
+    transition: transform 0.4s cubic-bezier(.68,-0.55,.27,1.55), opacity 0.4s ease;
+    filter: drop-shadow(0 2px 3px rgba(255,90,140,0.4));
+  }
+  .life-heart.lost {
+    transform: scale(0) rotate(-30deg);
+    opacity: 0;
+  }
+
+  .title-wrap {
+    position: relative;
+    text-align: center;
+    flex: 1;
+  }
+  .title {
+    display: inline-block;
+    font-size: clamp(22px, 5vw, 40px);
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, #ff7fb0, #ff5c8a, #b389f0, #ff9fc7);
+    background-size: 300% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: titleShimmer 6s linear infinite, titleFloat 3s ease-in-out infinite;
+    text-shadow: 0 2px 18px rgba(255,140,180,0.35);
+  }
+  @keyframes titleShimmer {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+  @keyframes titleFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .title-spark {
+    position: absolute;
+    font-size: 16px;
+    opacity: 0;
+    animation: titleSpark 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes titleSpark {
+    0% { opacity: 0; transform: translate(0,0) scale(0.5); }
+    20% { opacity: 1; }
+    100% { opacity: 0; transform: translate(var(--tx), var(--ty)) scale(1.1); }
+  }
+
+  .score-box {
+    font-size: clamp(18px, 3.6vw, 26px);
+    font-weight: 700;
+    color: var(--text-dark);
+    padding: 8px 16px;
+    background: rgba(255,255,255,0.45);
+    border-radius: 30px;
+    box-shadow: 0 4px 14px rgba(150,90,130,0.15), inset 0 1px 2px rgba(255,255,255,0.8);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.15s ease;
+  }
+  .score-box.pulse {
+    transform: scale(1.15);
+  }
+  .score-num {
+    display: inline-block;
+    min-width: 3.2ch;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- PLAYER ---------- */
+  #bucket-wrap {
+    position: absolute;
+    bottom: 6%;
+    left: 50%;
+    z-index: 15;
+    transform: translateX(-50%);
+    width: 110px;
+    height: 100px;
+  }
+  #bucket {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform-origin: 50% 90%;
+    animation: bucketIdle 1.6s ease-in-out infinite;
+    transition: transform 0.12s ease-out;
+  }
+  @keyframes bucketIdle {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-3px) rotate(0deg); }
+  }
+  #bucket.lean-left { transform: rotate(-10deg) translateY(-1px) !important; }
+  #bucket.lean-right { transform: rotate(10deg) translateY(-1px) !important; }
+  #bucket.happy { animation: bucketHappy 0.3s ease; }
+  @keyframes bucketHappy {
+    0% { transform: translateY(0) scale(1); }
+    40% { transform: translateY(-16px) scale(1.08, 0.94); }
+    100% { transform: translateY(0) scale(1); }
+  }
+  #bucket.hurt { animation: bucketHurt 0.4s ease; }
+  @keyframes bucketHurt {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px) rotate(-4deg); }
+    40% { transform: translateX(7px) rotate(4deg); }
+    60% { transform: translateX(-5px) rotate(-2deg); }
+    80% { transform: translateX(3px) rotate(1deg); }
+  }
+
+  .bucket-handle {
+    position: absolute;
+    top: -22px;
+    left: 50%;
+    width: 70px;
+    height: 34px;
+    margin-left: -35px;
+    border: 8px solid #ffb9cf;
+    border-bottom: none;
+    border-radius: 50px 50px 0 0;
+    box-shadow: 0 2px 3px rgba(255,255,255,0.6) inset;
+  }
+  .bucket-body {
+    position: absolute;
+    top: 20px;
+    left: 5%;
+    width: 90%;
+    height: 78px;
+    background: linear-gradient(160deg, #ffd6e4 0%, #ff9dc0 55%, #ff7fae 100%);
+    border-radius: 20px 20px 34px 34px / 20px 20px 40px 40px;
+    box-shadow:
+      inset -6px -10px 14px rgba(200,60,110,0.28),
+      inset 6px 8px 10px rgba(255,255,255,0.55),
+      0 10px 18px rgba(200,90,140,0.28);
+  }
+  .bucket-rim {
+    position: absolute;
+    top: 18px;
+    left: 3%;
+    width: 94%;
+    height: 16px;
+    background: linear-gradient(180deg, #ffe3ee, #ffb6d2);
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(255,255,255,0.6) inset, 0 3px 6px rgba(190,80,130,0.2);
+  }
+  .bucket-face {
+    position: absolute;
+    top: 46px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+  .eye {
+    width: 10px;
+    height: 13px;
+    background: #6b3550;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.2s ease;
+  }
+  .eye::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 3px; height: 3px;
+    background: white;
+    border-radius: 50%;
+  }
+  #bucket.happy .eye {
+    height: 4px;
+    border-radius: 4px;
+    top: 5px;
+  }
+  #bucket.hurt .eye {
+    border-radius: 40% 40% 60% 60%;
+  }
+  .mouth {
+    position: absolute;
+    top: 66px;
+    left: 50%;
+    width: 22px;
+    height: 10px;
+    margin-left: -11px;
+    border-bottom: 4px solid #b6497a;
+    border-radius: 0 0 20px 20px;
+    transition: all 0.2s ease;
+  }
+  #bucket.happy .mouth {
+    width: 30px;
+    height: 15px;
+    margin-left: -15px;
+    border-bottom-width: 5px;
+  }
+  #bucket.hurt .mouth {
+    border-bottom: none;
+    border-top: 4px solid #a8395f;
+    border-radius: 20px 20px 0 0;
+    top: 72px;
+  }
+  .cheek {
+    position: absolute;
+    top: 58px;
+    width: 12px;
+    height: 8px;
+    background: rgba(255,120,150,0.55);
+    border-radius: 50%;
+    filter: blur(1px);
+  }
+  .cheek.left { left: 12px; }
+  .cheek.right { right: 12px; }
+  .bucket-shadow {
+    position: absolute;
+    bottom: -10px;
+    left: 50%;
+    width: 70px;
+    height: 14px;
+    margin-left: -35px;
+    background: radial-gradient(ellipse, rgba(90,60,90,0.28), transparent 70%);
+    border-radius: 50%;
+  }
+
+  /* burst particles from bucket */
+  .burst-particle {
+    position: absolute;
+    pointer-events: none;
+    font-size: 18px;
+    z-index: 16;
+    animation: burstOut 0.6s ease-out forwards;
+  }
+  @keyframes burstOut {
+    0% { transform: translate(0,0) scale(0.6); opacity: 1; }
+    100% { transform: translate(var(--bx), var(--by)) scale(1.1); opacity: 0; }
+  }
+  .bad-particle {
+    position: absolute;
+    pointer-events: none;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #ff6b6b, #c0392b);
+    z-index: 16;
+    animation: burstOut 0.5s ease-out forwards;
+  }
+
+  /* ---------- FALLING OBJECTS ---------- */
+  .falling {
+    position: absolute;
+    z-index: 10;
+    font-size: 32px;
+    line-height: 1;
+    filter: drop-shadow(0 4px 6px rgba(120,80,110,0.25));
+    animation: wobble 1.6s ease-in-out infinite;
+    will-change: transform, top;
+  }
+  @keyframes wobble {
+    0%, 100% { margin-left: 0; }
+    50% { margin-left: 10px; }
+  }
+  .falling.caught {
+    animation: none !important;
+    transition: transform 0.28s ease, opacity 0.28s ease;
+    transform: scale(1.4);
+    opacity: 0;
+  }
+  .falling.missed {
+    transition: opacity 0.2s ease;
+    opacity: 0;
+  }
+
+  /* ---------- OVERLAYS ---------- */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(120, 90, 130, 0.28);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease;
+  }
+  .overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .panel {
+    background: linear-gradient(160deg, #fff5f9, #ffe8f1);
+    border-radius: 28px;
+    padding: 36px 40px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(120,60,100,0.3), inset 0 2px 3px rgba(255,255,255,0.9);
+    transform: scale(0.85) translateY(20px);
+    transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
+    max-width: 90vw;
+  }
+  .overlay.visible .panel {
+    transform: scale(1) translateY(0);
+  }
+  .panel h2 {
+    margin: 0 0 6px;
+    font-size: clamp(24px, 5vw, 34px);
+    color: var(--text-dark);
+  }
+  .panel .big-emoji {
+    font-size: clamp(48px, 10vw, 72px);
+    display: block;
+    margin-bottom: 6px;
+    animation: sadFloat 2s ease-in-out infinite;
+  }
+  @keyframes sadFloat {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-6px) rotate(-4deg); }
+  }
+  .panel .final-score {
+    font-size: clamp(18px, 4vw, 24px);
+    color: #b6497a;
+    margin: 10px 0 22px;
+    font-weight: 700;
+  }
+  .btn {
+    display: inline-block;
+    margin: 6px;
+    padding: 14px 30px;
+    border: none;
+    border-radius: 40px;
+    font-size: 17px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, #ff9dc0, #ff5c8a);
+    box-shadow: 0 8px 18px rgba(255,110,150,0.45), inset 0 1px 2px rgba(255,255,255,0.5);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    animation: btnGlow 2.4s ease-in-out infinite;
+  }
+  .btn:hover {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 12px 22px rgba(255,110,150,0.55), inset 0 1px 2px rgba(255,255,255,0.5);
+  }
+  .btn:active {
+    transform: translateY(0) scale(0.98);
+  }
+  .btn.secondary {
+    background: linear-gradient(135deg, #c9b4f0, #b389f0);
+    box-shadow: 0 8px 18px rgba(160,120,220,0.4), inset 0 1px 2px rgba(255,255,255,0.5);
+  }
+  @keyframes btnGlow {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.08); }
+  }
+
+  .hint {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    color: var(--text-dark);
+    opacity: 0.55;
+    z-index: 20;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  /* ---------- ICON BUTTONS (pause / info) ---------- */
+  .hud-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .icon-btn-row {
+    z-index: 25;
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .icon-btn {
+    width: 42px;
+    height: 42px;
+    border: none;
+    border-radius: 50%;
+    font-size: 19px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.55);
+    box-shadow: 0 4px 12px rgba(150,90,130,0.2), inset 0 1px 2px rgba(255,255,255,0.8);
+    backdrop-filter: blur(6px);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .icon-btn:hover {
+    transform: translateY(-2px) scale(1.06);
+    box-shadow: 0 6px 16px rgba(150,90,130,0.28), inset 0 1px 2px rgba(255,255,255,0.8);
+  }
+  .icon-btn:active {
+    transform: translateY(0) scale(0.95);
+  }
+
+  /* ---------- HOW TO PLAY / INFO PANEL ---------- */
+  .info-panel {
+    background: linear-gradient(160deg, #fff5f9, #ffe8f1);
+    border-radius: 28px;
+    padding: 28px 30px;
+    text-align: left;
+    max-width: 560px;
+    width: 90vw;
+    max-height: 82vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 50px rgba(120,60,100,0.3), inset 0 2px 3px rgba(255,255,255,0.9);
+    transform: scale(0.85) translateY(20px);
+    transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
+  }
+  .overlay.visible .info-panel {
+    transform: scale(1) translateY(0);
+  }
+  .info-panel h2 {
+    margin: 0 0 12px;
+    text-align: center;
+    font-size: clamp(22px, 5vw, 28px);
+    color: var(--text-dark);
+  }
+  .info-panel h3 {
+    margin: 18px 0 8px;
+    font-size: 16px;
+    color: #b6497a;
+  }
+  .info-section p {
+    margin: 4px 0;
+    font-size: 14px;
+    color: var(--text-dark);
+    line-height: 1.5;
+  }
+  .emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .emoji-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255,255,255,0.5);
+    border-radius: 14px;
+    padding: 8px 4px;
+    box-shadow: inset 0 1px 2px rgba(255,255,255,0.7);
+  }
+  .emoji-chip .e { font-size: 22px; }
+  .emoji-chip .p {
+    font-size: 12px;
+    font-weight: 700;
+    color: #b6497a;
+  }
+  .emoji-chip.bad .p { color: #a03050; }
+  .info-panel .btn {
+    display: block;
+    margin: 18px auto 0;
+  }
+  .close-x {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    font-size: 20px;
+    background: none;
+    box-shadow: none;
+    color: var(--text-dark);
+    opacity: 0.6;
+    cursor: pointer;
+    border: none;
+  }
+
+  @media (max-width: 640px) {
+    .hud { padding: 12px; }
+    .lives, .score-box { padding: 6px 12px; }
+    #bucket-wrap { width: 88px; height: 82px; }
+    .hint { font-size: 11px; }
+    .icon-btn { width: 34px; height: 34px; font-size: 15px; }
+    .info-panel { padding: 20px 18px; }
+    .emoji-chip .e { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="game">
+
+  <div class="cloud-layer" id="cloudLayer"></div>
+  <div class="decor-layer" id="decorLayer"></div>
+
+  <div class="hud">
+    <div class="lives" id="lives">
+      <span class="life-heart">❤️</span><span class="life-heart">❤️</span><span class="life-heart">❤️</span>
+    </div>
+    <div class="title-wrap">
+      <div class="title">❤️ Catch My Love</div>
+    </div>
+    <div class="hud-right">
+      <div class="score-box" id="scoreBox">⭐ <span class="score-num" id="scoreNum">0000</span></div>
+      <div class="icon-btn-row">
+        <button class="icon-btn" id="infoBtn" title="How to play" aria-label="How to play">ℹ️</button>
+        <button class="icon-btn" id="pauseBtn" title="Pause" aria-label="Pause">⏸️</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="bucket-wrap">
+    <div id="bucket">
+      <div class="bucket-shadow"></div>
+      <div class="bucket-handle"></div>
+      <div class="bucket-body"></div>
+      <div class="bucket-rim"></div>
+      <div class="cheek left"></div>
+      <div class="cheek right"></div>
+      <div class="bucket-face">
+        <div class="eye"></div>
+        <div class="eye"></div>
+      </div>
+      <div class="mouth"></div>
+    </div>
+  </div>
+
+  <div class="hint">← → or A D to move · ESC to pause</div>
+
+  <div class="overlay" id="pauseOverlay">
+    <div class="panel">
+      <h2>⏸️ Paused</h2>
+      <div>
+        <button class="btn" id="resumeBtn">Continue</button>
+        <button class="btn secondary" id="restartFromPauseBtn">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="infoOverlay">
+    <div class="info-panel">
+      <button class="close-x" id="closeInfoBtn" aria-label="Close">✕</button>
+      <h2>💗 How to Play</h2>
+      <div class="info-section">
+        <h3>Controls</h3>
+        <p>← → arrow keys or A / D to move the bucket. On mobile, drag your finger left and right.</p>
+        <p>Press ESC or tap ⏸️ to pause. Tap ℹ️ any time to see this guide again.</p>
+        <h3>Goal</h3>
+        <p>Catch falling love and sweets in your bucket to score points. Avoid the bad objects — they cost you a life and a point. Lose all 3 hearts and it's game over!</p>
+      </div>
+      <h3>💖 Good Objects (+points)</h3>
+      <div class="emoji-grid">
+        <div class="emoji-chip"><span class="e">❤️</span><span class="p">+10</span></div>
+        <div class="emoji-chip"><span class="e">🩷</span><span class="p">+20</span></div>
+        <div class="emoji-chip"><span class="e">💖</span><span class="p">+30</span></div>
+        <div class="emoji-chip"><span class="e">💗</span><span class="p">+40</span></div>
+        <div class="emoji-chip"><span class="e">💘</span><span class="p">+50</span></div>
+        <div class="emoji-chip"><span class="e">💝</span><span class="p">+60</span></div>
+        <div class="emoji-chip"><span class="e">💞</span><span class="p">+70</span></div>
+        <div class="emoji-chip"><span class="e">💕</span><span class="p">+80</span></div>
+        <div class="emoji-chip"><span class="e">💌</span><span class="p">+50</span></div>
+        <div class="emoji-chip"><span class="e">🌹</span><span class="p">+40</span></div>
+        <div class="emoji-chip"><span class="e">🍫</span><span class="p">+60</span></div>
+        <div class="emoji-chip"><span class="e">🧸</span><span class="p">+80</span></div>
+        <div class="emoji-chip"><span class="e">✨</span><span class="p">+20</span></div>
+        <div class="emoji-chip"><span class="e">⭐</span><span class="p">+25</span></div>
+      </div>
+      <h3>💔 Bad Objects (avoid!)</h3>
+      <div class="emoji-grid">
+        <div class="emoji-chip bad"><span class="e">💔</span><span class="p">-1 life</span></div>
+        <div class="emoji-chip bad"><span class="e">⚡</span><span class="p">-1 life</span></div>
+        <div class="emoji-chip bad"><span class="e">☁️</span><span class="p">-1 life</span></div>
+        <div class="emoji-chip bad"><span class="e">😢</span><span class="p">-1 life</span></div>
+      </div>
+      <button class="btn" id="closeInfoBtn2">Got it!</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="gameOverOverlay">
+    <div class="panel">
+      <span class="big-emoji">💔</span>
+      <h2>Game Over</h2>
+      <div class="final-score" id="finalScore">Final Score: 0</div>
+      <button class="btn" id="playAgainBtn">Play Again</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const game = document.getElementById('game');
+  const cloudLayer = document.getElementById('cloudLayer');
+  const decorLayer = document.getElementById('decorLayer');
+  const livesEl = document.getElementById('lives');
+  const scoreBox = document.getElementById('scoreBox');
+  const scoreNumEl = document.getElementById('scoreNum');
+  const bucketWrap = document.getElementById('bucket-wrap');
+  const bucket = document.getElementById('bucket');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const finalScoreEl = document.getElementById('finalScore');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const restartFromPauseBtn = document.getElementById('restartFromPauseBtn');
+  const playAgainBtn = document.getElementById('playAgainBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const infoBtn = document.getElementById('infoBtn');
+  const infoOverlay = document.getElementById('infoOverlay');
+  const closeInfoBtn = document.getElementById('closeInfoBtn');
+  const closeInfoBtn2 = document.getElementById('closeInfoBtn2');
+
+  // ---------------- SOUND HOOK (placeholder for future audio) ----------------
+  // Music/SFX will be wired in later. Keep a tiny stub so call sites are ready.
+  const Sound = {
+    play(name) {
+      // no-op for now; e.g. Sound.play('catch'), Sound.play('hurt'), Sound.play('gameover')
+    }
+  };
+
+  // ---------------- GAME STATE ----------------
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+
+  const GOOD_EMOJIS = [
+    { e: '❤️', pts: 10 }, { e: '🩷', pts: 20 }, { e: '💖', pts: 30 },
+    { e: '💗', pts: 40 }, { e: '💘', pts: 50 }, { e: '💝', pts: 60 },
+    { e: '💞', pts: 70 }, { e: '💕', pts: 80 }, { e: '💌', pts: 50 },
+    { e: '🌹', pts: 40 }, { e: '🍫', pts: 60 }, { e: '🧸', pts: 80 },
+    { e: '✨', pts: 20 }, { e: '⭐', pts: 25 }
+  ];
+  const BAD_EMOJIS = ['💔', '⚡', '☁️', '😢'];
+
+  let score = 0;
+  let displayScore = 0;
+  let lives = 3;
+  let running = true;
+  let paused = false;
+  let gameOver = false;
+
+  let bucketX = W / 2;
+  let bucketTargetX = W / 2;
+  const BUCKET_HALF_WIDTH = 55;
+  const bucketSpeed = 0.16; // easing factor
+
+  const keys = { left: false, right: false };
+
+  let fallingObjects = [];
+  let lastSpawn = 0;
+  let nextSpawnDelay = randRange(400, 900);
+
+  let lastFrameTime = performance.now();
+  let rafId = null;
+
+  function randRange(min, max) { return Math.random() * (max - min) + min; }
+  function choice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  // ---------------- CLOUDS ----------------
+  function createCloud(initial) {
+    const cloud = document.createElement('div');
+    cloud.className = 'cloud';
+    const scale = randRange(0.6, 1.6);
+    const puffCount = 3 + Math.floor(Math.random() * 3);
+    const baseWidth = 90 * scale;
+    const baseHeight = 40 * scale;
+    cloud.style.width = baseWidth + 'px';
+    cloud.style.height = baseHeight + 'px';
+
+    for (let i = 0; i < puffCount; i++) {
+      const puff = document.createElement('div');
+      puff.className = 'puff';
+      const size = randRange(30, 55) * scale;
+      puff.style.width = size + 'px';
+      puff.style.height = size + 'px';
+      puff.style.left = (i * (baseWidth / puffCount) - size * 0.15) + 'px';
+      puff.style.top = (baseHeight - size * 0.75 + Math.sin(i) * 6) + 'px';
+      cloud.appendChild(puff);
+    }
+
+    const opacity = randRange(0.35, 0.85);
+    cloud.style.opacity = opacity;
+    const top = randRange(2, 55);
+    cloud.style.top = top + '%';
+    const speed = randRange(20, 60); // seconds to cross screen
+    const startX = initial ? randRange(-20, 100) : -20;
+    cloud.style.left = startX + '%';
+
+    cloudLayer.appendChild(cloud);
+
+    let posPercent = startX;
+    const driftSpeed = 100 / speed; // percent per second
+
+    cloud._update = function (dt) {
+      posPercent += driftSpeed * dt;
+      if (posPercent > 110) posPercent = -25;
+      cloud.style.left = posPercent + '%';
+    };
+
+    return cloud;
+  }
+
+  const clouds = [];
+  function initClouds() {
+    cloudLayer.innerHTML = '';
+    clouds.length = 0;
+    const count = W < 700 ? 4 : 7;
+    for (let i = 0; i < count; i++) {
+      clouds.push(createCloud(true));
+    }
+  }
+
+  // ---------------- DECORATIVE PARTICLES ----------------
+  const DECOR_SYMBOLS = ['💗', '✨', '⭐', '💫', '•'];
+  const decorParticles = [];
+
+  function createDecor() {
+    const el = document.createElement('div');
+    el.className = 'decor';
+    const symbol = choice(DECOR_SYMBOLS);
+    if (symbol === '•') {
+      el.style.width = randRange(4, 8) + 'px';
+      el.style.height = el.style.width;
+      el.style.borderRadius = '50%';
+      el.style.background = 'radial-gradient(circle, rgba(255,255,255,0.9), rgba(255,200,220,0.2))';
+    } else {
+      el.textContent = symbol;
+      el.style.fontSize = randRange(10, 20) + 'px';
+    }
+    const startX = randRange(0, 100);
+    const startY = randRange(0, 100);
+    el.style.left = startX + '%';
+    el.style.top = startY + '%';
+    let opacity = randRange(0.15, 0.6);
+    el.style.opacity = opacity;
+    decorLayer.appendChild(el);
+
+    const driftX = randRange(-4, 4); // % per second
+    const driftY = randRange(-6, -1); // upward drift mostly
+    const rotSpeed = randRange(-30, 30); // deg per second
+    let rot = 0;
+    let x = startX, y = startY;
+    let fadeDir = Math.random() < 0.5 ? 1 : -1;
+    let life = 0;
+
+    const data = {
+      el, x, y, rot, driftX, driftY, rotSpeed, opacity, fadeDir, life
+    };
+
+    data._update = function (dt) {
+      data.life += dt;
+      data.x += data.driftX * dt;
+      data.y += data.driftY * dt;
+      data.rot += data.rotSpeed * dt;
+      data.opacity += data.fadeDir * dt * 0.08;
+      if (data.opacity > 0.7) { data.opacity = 0.7; data.fadeDir = -1; }
+      if (data.opacity < 0.08) { data.opacity = 0.08; data.fadeDir = 1; }
+
+      if (data.y < -5 || data.y > 105 || data.x < -5 || data.x > 105) {
+        data.x = randRange(0, 100);
+        data.y = 105;
+      }
+
+      el.style.left = data.x + '%';
+      el.style.top = data.y + '%';
+      el.style.opacity = data.opacity;
+      el.style.transform = 'rotate(' + data.rot + 'deg)';
+    };
+
+    return data;
+  }
+
+  function initDecor() {
+    decorLayer.innerHTML = '';
+    decorParticles.length = 0;
+    const count = W < 700 ? 14 : 26;
+    for (let i = 0; i < count; i++) {
+      decorParticles.push(createDecor());
+    }
+  }
+
+  // ---------------- SCORE / LIVES UI ----------------
+  function renderLives() {
+    const hearts = livesEl.querySelectorAll('.life-heart');
+    hearts.forEach((h, i) => {
+      if (i < lives) {
+        h.classList.remove('lost');
+      } else {
+        h.classList.add('lost');
+      }
+    });
+  }
+
+  function animateScoreDisplay(dt) {
+    if (displayScore === score) return;
+    const diff = score - displayScore;
+    const step = Math.sign(diff) * Math.max(1, Math.ceil(Math.abs(diff) * dt * 6));
+    displayScore += step;
+    if ((step > 0 && displayScore > score) || (step < 0 && displayScore < score)) {
+      displayScore = score;
+    }
+    scoreNumEl.textContent = String(displayScore).padStart(4, '0');
+  }
+
+  function pulseScore() {
+    scoreBox.classList.add('pulse');
+    setTimeout(() => scoreBox.classList.remove('pulse'), 180);
+  }
+
+  // ---------------- BUCKET CONTROL ----------------
+  function updateBucket(dt) {
+    if (keys.left && !keys.right) {
+      bucketTargetX -= 420 * dt;
+      bucket.classList.remove('lean-right');
+      bucket.classList.add('lean-left');
+    } else if (keys.right && !keys.left) {
+      bucketTargetX += 420 * dt;
+      bucket.classList.remove('lean-left');
+      bucket.classList.add('lean-right');
+    } else {
+      bucket.classList.remove('lean-left');
+      bucket.classList.remove('lean-right');
+    }
+
+    bucketTargetX = Math.max(BUCKET_HALF_WIDTH, Math.min(W - BUCKET_HALF_WIDTH, bucketTargetX));
+    bucketX += (bucketTargetX - bucketX) * Math.min(1, bucketSpeed * (dt * 60));
+
+    bucketWrap.style.left = bucketX + 'px';
+  }
+
+  function bucketReact(good) {
+    bucket.classList.remove('happy', 'hurt');
+    void bucket.offsetWidth; // restart animation
+    bucket.classList.add(good ? 'happy' : 'hurt');
+    setTimeout(() => bucket.classList.remove('happy', 'hurt'), 400);
+
+    if (good) {
+      spawnBurstParticles();
+    } else {
+      spawnBadParticles();
+      shakeScreen();
+    }
+  }
+
+  function spawnBurstParticles() {
+    const symbols = ['💖', '✨', '💕', '⭐'];
+    const rect = bucketWrap.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.className = 'burst-particle';
+      p.textContent = choice(symbols);
+      const angle = (Math.PI * 2 * i) / 8 + Math.random() * 0.4;
+      const dist = randRange(40, 90);
+      p.style.setProperty('--bx', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--by', Math.sin(angle) * dist - 20 + 'px');
+      p.style.left = cx + 'px';
+      p.style.top = cy + 'px';
+      game.appendChild(p);
+      setTimeout(() => p.remove(), 650);
+    }
+  }
+
+  function spawnBadParticles() {
+    const rect = bucketWrap.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    for (let i = 0; i < 7; i++) {
+      const p = document.createElement('div');
+      p.className = 'bad-particle';
+      const angle = (Math.PI * 2 * i) / 7 + Math.random() * 0.4;
+      const dist = randRange(30, 65);
+      p.style.setProperty('--bx', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--by', Math.sin(angle) * dist + 'px');
+      p.style.left = cx + 'px';
+      p.style.top = cy + 'px';
+      game.appendChild(p);
+      setTimeout(() => p.remove(), 550);
+    }
+  }
+
+  function shakeScreen() {
+    game.style.transition = 'transform 0.06s ease';
+    let count = 0;
+    const shakeVals = [-8, 8, -6, 6, -3, 3, 0];
+    function step() {
+      if (count >= shakeVals.length) {
+        game.style.transform = 'translateX(0)';
+        return;
+      }
+      game.style.transform = 'translateX(' + shakeVals[count] + 'px)';
+      count++;
+      setTimeout(step, 40);
+    }
+    step();
+  }
+
+  // ---------------- FALLING OBJECTS ----------------
+  function spawnObject() {
+    const isBad = Math.random() < 0.22;
+    const data = {};
+    const el = document.createElement('div');
+    el.className = 'falling';
+
+    if (isBad) {
+      data.emoji = choice(BAD_EMOJIS);
+      data.bad = true;
+      data.pts = -1;
+    } else {
+      const g = choice(GOOD_EMOJIS);
+      data.emoji = g.e;
+      data.bad = false;
+      data.pts = g.pts;
+    }
+
+    el.textContent = data.emoji;
+
+    const size = randRange(26, 42);
+    el.style.fontSize = size + 'px';
+    data.size = size;
+
+    const startX = randRange(30, W - 30);
+    data.x = startX;
+    data.y = -60;
+    el.style.left = (startX - size / 2) + 'px';
+    el.style.top = data.y + 'px';
+
+    const rotation = randRange(-25, 25);
+    el.style.transform = 'rotate(' + rotation + 'deg)';
+    data.rotation = rotation;
+
+    const fallDuration = randRange(3.2, 5.5); // seconds to cross screen
+    data.speed = (H + 120) / fallDuration; // px per second
+    data.rotSpeed = randRange(-40, 40);
+
+    game.appendChild(el);
+    data.el = el;
+    data.caught = false;
+    data.removed = false;
+
+    fallingObjects.push(data);
+  }
+
+  function updateFallingObjects(dt) {
+    for (let i = fallingObjects.length - 1; i >= 0; i--) {
+      const obj = fallingObjects[i];
+      if (obj.removed) continue;
+
+      obj.y += obj.speed * dt;
+      obj.rotation += obj.rotSpeed * dt;
+      obj.el.style.top = obj.y + 'px';
+
+      // collision check with bucket
+      const bucketTop = H * 0.88 - 30;
+      const bucketBottom = H * 0.88 + 30;
+      const bucketLeft = bucketX - BUCKET_HALF_WIDTH;
+      const bucketRight = bucketX + BUCKET_HALF_WIDTH;
+
+      const objLeft = obj.x - obj.size / 2;
+      const objRight = obj.x + obj.size / 2;
+      const objTop = obj.y;
+      const objBottom = obj.y + obj.size;
+
+      if (!obj.caught && objBottom > bucketTop && objTop < bucketBottom) {
+        const overlapX = Math.min(objRight, bucketRight) - Math.max(objLeft, bucketLeft);
+        const objWidth = objRight - objLeft;
+        if (overlapX > 0 && overlapX / objWidth >= 0.6) {
+          catchObject(obj);
+        }
+      }
+
+      if (!obj.caught && obj.y > H + 40) {
+        removeObject(obj, 'missed');
+      }
+    }
+  }
+
+  function catchObject(obj) {
+    obj.caught = true;
+    obj.el.classList.add('caught');
+
+    if (obj.bad) {
+      score = Math.max(0, score - 1);
+      lives = Math.max(0, lives - 1);
+      renderLives();
+      bucketReact(false);
+      if (lives <= 0) {
+        setTimeout(() => triggerGameOver(), 250);
+      }
+    } else {
+      score += obj.pts;
+      bucketReact(true);
+      pulseScore();
+    }
+
+    setTimeout(() => removeObject(obj, 'caught-done'), 300);
+  }
+
+  function removeObject(obj, reason) {
+    if (obj.removed) return;
+    obj.removed = true;
+    if (reason === 'missed') {
+      obj.el.classList.add('missed');
+      setTimeout(() => obj.el.remove(), 220);
+    } else {
+      obj.el.remove();
+    }
+    const idx = fallingObjects.indexOf(obj);
+    if (idx !== -1) fallingObjects.splice(idx, 1);
+  }
+
+  function clearAllObjects() {
+    fallingObjects.forEach(o => o.el.remove());
+    fallingObjects = [];
+  }
+
+  // ---------------- GAME LOOP ----------------
+  function gameLoop(time) {
+    const dt = Math.min(0.05, (time - lastFrameTime) / 1000);
+    lastFrameTime = time;
+
+    if (!paused && !gameOver) {
+      updateBucket(dt);
+      updateFallingObjects(dt);
+      animateScoreDisplay(dt);
+
+      lastSpawn += dt * 1000;
+      if (lastSpawn >= nextSpawnDelay) {
+        spawnObject();
+        lastSpawn = 0;
+        nextSpawnDelay = randRange(400, 900);
+      }
+    }
+
+    clouds.forEach(c => c._update(dt));
+    decorParticles.forEach(d => d._update(dt));
+
+    rafId = requestAnimationFrame(gameLoop);
+  }
+
+  // ---------------- PAUSE / GAME OVER ----------------
+  function togglePause() {
+    if (gameOver || infoOpen) return;
+    paused = !paused;
+    pauseOverlay.classList.toggle('visible', paused);
+    pauseBtn.textContent = paused ? '▶️' : '⏸️';
+    pauseBtn.title = paused ? 'Resume' : 'Pause';
+  }
+
+  let infoOpen = false;
+  let wasPausedBeforeInfo = false;
+
+  function showInfo() {
+    if (gameOver) return;
+    infoOpen = true;
+    wasPausedBeforeInfo = paused;
+    paused = true;
+    infoOverlay.classList.add('visible');
+  }
+
+  function hideInfo() {
+    infoOpen = false;
+    infoOverlay.classList.remove('visible');
+    paused = wasPausedBeforeInfo;
+  }
+
+  function triggerGameOver() {
+    gameOver = true;
+    finalScoreEl.textContent = 'Final Score: ' + score;
+    gameOverOverlay.classList.add('visible');
+  }
+
+  function resetGame() {
+    score = 0;
+    displayScore = 0;
+    lives = 3;
+    scoreNumEl.textContent = '0000';
+    renderLives();
+    clearAllObjects();
+    bucketX = W / 2;
+    bucketTargetX = W / 2;
+    bucketWrap.style.left = bucketX + 'px';
+    paused = false;
+    gameOver = false;
+    lastSpawn = 0;
+    nextSpawnDelay = randRange(400, 900);
+    pauseOverlay.classList.remove('visible');
+    gameOverOverlay.classList.remove('visible');
+    pauseBtn.textContent = '⏸️';
+    pauseBtn.title = 'Pause';
+    lastFrameTime = performance.now();
+  }
+
+  // ---------------- INPUT ----------------
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === 'Escape') togglePause();
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+  });
+
+  // touch controls: drag anywhere to move bucket
+  let touchActive = false;
+  game.addEventListener('touchstart', (e) => {
+    touchActive = true;
+    bucketTargetX = e.touches[0].clientX;
+  }, { passive: true });
+  game.addEventListener('touchmove', (e) => {
+    if (touchActive) {
+      bucketTargetX = e.touches[0].clientX;
+    }
+  }, { passive: true });
+  game.addEventListener('touchend', () => { touchActive = false; });
+
+  resumeBtn.addEventListener('click', togglePause);
+  pauseBtn.addEventListener('click', togglePause);
+  restartFromPauseBtn.addEventListener('click', () => {
+    resetGame();
+  });
+  playAgainBtn.addEventListener('click', () => {
+    resetGame();
+  });
+  infoBtn.addEventListener('click', showInfo);
+  closeInfoBtn.addEventListener('click', hideInfo);
+  closeInfoBtn2.addEventListener('click', hideInfo);
+
+  // ---------------- RESIZE ----------------
+  function handleResize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    bucketTargetX = Math.max(BUCKET_HALF_WIDTH, Math.min(W - BUCKET_HALF_WIDTH, bucketTargetX));
+    initClouds();
+    initDecor();
+  }
+  window.addEventListener('resize', handleResize);
+
+  // ---------------- INIT ----------------
+  function init() {
+    renderLives();
+    initClouds();
+    initDecor();
+    bucketWrap.style.left = bucketX + 'px';
+    lastFrameTime = performance.now();
+    rafId = requestAnimationFrame(gameLoop);
+    showInfo();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
