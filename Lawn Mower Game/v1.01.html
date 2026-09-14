@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Retro Lawn Mower Game</title>
+<style>
+  /* --- CSS SECTION --- */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    overflow: hidden;
+    font-family: monospace;
+    user-select: none;
+  }
+
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: #3c6;
+    image-rendering: pixelated;
+  }
+
+  /* UI overlays */
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    font-family: monospace;
+    font-size: 14px;
+    background: rgba(0,0,0,0.4);
+    padding: 8px;
+    border-radius: 8px;
+  }
+
+  #pauseOverlay, #gameOverOverlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9);
+    color: #fff;
+    padding: 20px;
+    border-radius: 10px;
+    display: none;
+    max-width: 90%;
+    text-align: center;
+    font-family: monospace;
+    font-size: 16px;
+  }
+  #pauseOverlay h2, #gameOverOverlay h2 {
+    margin-top: 0;
+  }
+  button {
+    margin: 8px;
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="640" height="480"></canvas>
+<div id="ui">
+  Yard: <span id="yardDisplay">1</span><br>
+  Score: <span id="scoreDisplay">0</span><br>
+  High Score: <span id="highScoreDisplay">0</span><br>
+  <button id="pauseBtn">Pause</button>
+</div>
+
+<div id="pauseOverlay">
+  <h2>Paused</h2>
+  <p>Arrow Keys = Move</p>
+  <p>Goal: Cut all grass, avoid obstacles.</p>
+  <button id="resumeBtn">Resume</button>
+</div>
+
+<div id="gameOverOverlay">
+  <h2>GAME OVER</h2>
+  <p>Score: <span id="finalScore">0</span></p>
+  <p id="sarcasticMsg"></p>
+  <button id="restartBtn">Restart</button>
+</div>
+
+<script>
+  // --- JS SECTION ---
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  const yardDisplay = document.getElementById('yardDisplay');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const highScoreDisplay = document.getElementById('highScoreDisplay');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const resumeBtn = document.getElementById('resumeBtn');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const finalScoreSpan = document.getElementById('finalScore');
+  const sarcasticMsg = document.getElementById('sarcasticMsg');
+  const restartBtn = document.getElementById('restartBtn');
+
+  // --- Constants ---
+  const WIDTH = 640;
+  const HEIGHT = 480;
+  const TILE_SIZE = 32; // size of grid tiles
+  const ROWS = Math.floor(HEIGHT / TILE_SIZE);
+  const COLS = Math.floor(WIDTH / TILE_SIZE);
+
+  // --- Game State ---
+  let gamePaused = false;
+  let gameOver = false;
+
+  let yardNumber = 1;
+  let score = 0;
+  let highScore = localStorage.getItem('lawnHighScore') || 0;
+
+  let grassMap = [];
+  let obstacles = [];
+  let particles = [];
+  let yardTimer = 0;
+  let yardComplete = false;
+  let yardStartCountdown = 3;
+  let yardStartCount = 0;
+  let yardStartState = 'countdown'; // 'countdown', 'playing', 'done'
+  let yardStartTimer = 0;
+
+  // --- Player ---
+  const player = {
+    x: 0,
+    y: 0,
+    width: TILE_SIZE * 0.8,
+    height: TILE_SIZE * 0.8,
+    color: '#ffcc00',
+    speed: 2,
+    vx: 0,
+    vy: 0,
+    direction: 0 // 0: up, 1: right, 2: down, 3: left
+  };
+
+  let moveInput = { up: false, down: false, left: false, right: false };
+
+  // --- Sounds ---
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = new AudioCtx();
+
+  let engineOsc, grassOsc, crashOsc, beepOsc;
+
+  function playSound(freq, duration=0.1, volume=0.2){
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type='square';
+    osc.frequency.value=freq;
+    gain.gain.value=volume;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  }
+
+  function playEngineSound(){
+    if(engineOsc) return;
+    engineOsc = audioCtx.createOscillator();
+    engineOsc.type='square';
+    engineOsc.frequency.value=100;
+    const gain = audioCtx.createGain();
+    gain.gain.value=0.05;
+    engineOsc.connect(gain);
+    gain.connect(audioCtx.destination);
+    engineOsc.start();
+    // store gain for volume control if needed
+  }
+  function stopEngineSound(){
+    if(engineOsc){
+      engineOsc.stop();
+      engineOsc.disconnect();
+      engineOsc=null;
+    }
+  }
+
+  // --- Utility ---
+  function randInt(min, max){
+    return Math.floor(Math.random()*(max-min+1))+min;
+  }
+
+  // --- Initialize ---
+function init() {
+  // Load high score
+  highScore = localStorage.getItem('lawnHighScore') || 0;
+  highScoreDisplay.textContent=highScore;
+
+  newYard();
+  setupInput();
+  requestAnimationFrame(loop);
+}
+
+function newYard() {
+  yardNumber++;
+  yardDisplay.textContent = yardNumber;
+  score = 0;
+  scoreDisplay.textContent = score;
+  generateGrass();
+  generateObstacles();
+  resetPlayer();
+  yardStartCountdown=3;
+  yardStartCount=0;
+  yardStartState='countdown';
+  yardStartTimer=0;
+  yardComplete=false;
+  particles=[];
+
+  // Increase difficulty
+  // For simplicity, increase speed and obstacles count based on yard
+  player.speed = 2 + (yardNumber - 1) * 0.2;
+  // Clear any previous obstacle dynamics
+}
+
+function resetPlayer() {
+  // Place player at center
+  player.x = Math.floor(COLS/2)*TILE_SIZE + TILE_SIZE/2;
+  player.y = Math.floor(ROWS/2)*TILE_SIZE + TILE_SIZE/2;
+  player.vx=0;
+  player.vy=0;
+}
+
+function generateGrass() {
+  grassMap = [];
+  for(let r=0; r<ROWS; r++){
+    grassMap[r]=[];
+    for(let c=0; c<COLS; c++){
+      grassMap[r][c]=true; // true=grass uncut
+    }
+  }
+}
+
+function generateObstacles() {
+  obstacles = [];
+  const obstacleCount = 5 + yardNumber; // more obstacles as yard progresses
+  for(let i=0;i<obstacleCount;i++){
+    const typeRand= Math.random();
+    let type='rock'; // default
+    if(typeRand<0.3) type='rock';
+    else if(typeRand<0.6) type='wall';
+    else if(typeRand<0.75) type='tree';
+    else if(typeRand<0.85) type='flower';
+    else if(typeRand<0.95) type='log';
+    else type='statue';
+
+    let x,y;
+    let tries=0;
+    do{
+      x=randInt(1,COLS-2);
+      y=randInt(1,ROWS-2);
+      // avoid overlapping with player start
+    }while(Math.abs(x - Math.floor(COLS/2))<2 && Math.abs(y - Math.floor(ROWS/2))<2 && tries<10);
+    obstacles.push({x,y,type});
+  }
+}
+
+function drawGrass() {
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(grassMap[r][c]){
+        ctx.fillStyle='#7cfc00'; // bright green
+      }else{
+        ctx.fillStyle='#228b22'; // dark green
+      }
+      ctx.fillRect(c*TILE_SIZE,r*TILE_SIZE,TILE_SIZE,TILE_SIZE);
+    }
+  }
+}
+
+function drawObstacles() {
+  for(let ob of obstacles){
+    switch(ob.type){
+      case 'rock':
+        ctx.fillStyle='#888';
+        ctx.fillRect(ob.x*TILE_SIZE+4, ob.y*TILE_SIZE+4, TILE_SIZE-8, TILE_SIZE-8);
+        break;
+      case 'wall':
+        ctx.fillStyle='#a52a2a';
+        ctx.fillRect(ob.x*TILE_SIZE, ob.y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        break;
+      case 'tree':
+        ctx.fillStyle='#006400';
+        ctx.beginPath();
+        ctx.arc(ob.x*TILE_SIZE+TILE_SIZE/2, ob.y*TILE_SIZE+TILE_SIZE/2, TILE_SIZE/2-4, 0, Math.PI*2);
+        ctx.fill();
+        break;
+      case 'flower':
+        ctx.fillStyle='#ff69b4';
+        ctx.fillRect(ob.x*TILE_SIZE+12, ob.y*TILE_SIZE+12, 8,8);
+        break;
+      case 'log':
+        ctx.fillStyle='#8b4513';
+        ctx.fillRect(ob.x*TILE_SIZE+4, ob.y*TILE_SIZE+14, TILE_SIZE-8, 4);
+        break;
+      case 'statue':
+        ctx.fillStyle='#555';
+        ctx.fillRect(ob.x*TILE_SIZE+8, ob.y*TILE_SIZE+8, TILE_SIZE-16, TILE_SIZE-16);
+        break;
+    }
+  }
+}
+
+function drawPlayer() {
+  ctx.fillStyle=player.color;
+  ctx.fillRect(player.x - player.width/2, player.y - player.height/2, player.width, player.height);
+}
+
+function isObstacleAt(x,y) {
+  for(let ob of obstacles){
+    if(ob.x===x && ob.y===y) return ob;
+  }
+  return null;
+}
+
+function checkCollision() {
+  // Check outside borders
+  if(player.x - player.width/2<0 || player.x + player.width/2>WIDTH ||
+     player.y - player.height/2<0 || player.y + player.height/2>HEIGHT){
+    return true;
+  }
+  // Check obstacles
+  let tileX = Math.floor(player.x/TILE_SIZE);
+  let tileY = Math.floor(player.y/TILE_SIZE);
+  if(isObstacleAt(tileX,tileY)){
+    return true;
+  }
+  return false;
+}
+
+function handleGrass() {
+  const c = Math.floor(player.x/TILE_SIZE);
+  const r = Math.floor(player.y/TILE_SIZE);
+  if(r>=0 && r<ROWS && c>=0 && c<COLS){
+    if(grassMap[r][c]){
+      grassMap[r][c]=false;
+      score+=10;
+      scoreDisplay.textContent=score;
+      createParticles(c*TILE_SIZE+TILE_SIZE/2, r*TILE_SIZE+TILE_SIZE/2);
+      playGrassCutSound();
+    }
+  }
+}
+
+function createParticles(x,y) {
+  for(let i=0;i<5;i++){
+    particles.push({
+      x:x,
+      y:y,
+      vx:(Math.random()-0.5)*2,
+      vy:(Math.random()-0.5)*2,
+      life:20
+    });
+  }
+}
+
+function drawParticles() {
+  for(let p of particles){
+    ctx.fillStyle='#7cfc00';
+    ctx.fillRect(p.x,p.y,2,2);
+  }
+}
+
+function updateParticles() {
+  for(let p of particles){
+    p.x+=p.vx;
+    p.y+=p.vy;
+    p.life--;
+  }
+  particles = particles.filter(p=>p.life>0);
+}
+
+function playGrassCutSound() {
+  // optional: implement sound
+  // For simplicity, skip or add a short beep
+  // playSound(600,0.05)
+}
+
+function gameOverFunc() {
+  gameOver=true;
+  // Save high score
+  if(score>highScore){
+    highScore=score;
+    localStorage.setItem('lawnHighScore', highScore);
+    highScoreDisplay.textContent=highScore;
+  }
+  document.getElementById('finalScore').textContent=score;
+  // Random sarcastic message
+  const messages=[
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "Professional gardener? Interesting.",
+    "Grass survived. You didn't.",
+    "Driving lessons recommended.",
+    "You found the only obstacle.",
+    "Breaking News: Lawn mower defeated.",
+    "You had one job.",
+    "Better luck next time.",
+    "Nature wins again.",
+    "Oops! That was close.",
+    "Well, that didn't go well.",
+    "Play again?",
+    "Oops! Crash!",
+    "Grass is resilient.",
+    "Watch out for obstacles.",
+    "Better mowing skills needed.",
+    "That obstacle had a bad day.",
+    "Next time, try harder.",
+    "Game over, man.",
+    "You were so close.",
+    "The lawn misses you.",
+    "Oops, crashed!",
+    "Try again?",
+    "That was an adventure.",
+    "Watch your step.",
+    "Obstacle: 1, You: 0.",
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "You found the only obstacle."
+  ];
+  sarcasticMsg.textContent = messages[randInt(0,messages.length-1)];
+  document.getElementById('gameOverOverlay').style.display='block';
+  stopEngineSound();
+}
+
+function restartGame() {
+  gameOver=false;
+  document.getElementById('gameOverOverlay').style.display='none';
+  newYard();
+  requestAnimationFrame(loop);
+}
+
+function pauseGame() {
+  gamePaused=true;
+  document.getElementById('pauseOverlay').style.display='block';
+  stopEngineSound();
+}
+
+function resumeGame() {
+  gamePaused=false;
+  document.getElementById('pauseOverlay').style.display='none';
+  requestAnimationFrame(loop);
+  if(moveInput.up || moveInput.down || moveInput.left || moveInput.right){
+    playEngineSound();
+  }
+}
+
+// --- Input ---
+function setupInput() {
+  window.addEventListener('keydown', e=>{
+    if(e.key==='ArrowUp') moveInput.up=true;
+    if(e.key==='ArrowDown') moveInput.down=true;
+    if(e.key==='ArrowLeft') moveInput.left=true;
+    if(e.key==='ArrowRight') moveInput.right=true;
+    if(e.key==='Escape'){pauseGame();}
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.key==='ArrowUp') moveInput.up=false;
+    if(e.key==='ArrowDown') moveInput.down=false;
+    if(e.key==='ArrowLeft') moveInput.left=false;
+    if(e.key==='ArrowRight') moveInput.right=false;
+  });
+  document.getElementById('pauseBtn').addEventListener('click', ()=>pauseGame());
+  document.getElementById('resumeBtn').addEventListener('click', ()=>resumeGame());
+  document.getElementById('restartBtn').addEventListener('click', ()=>restartGame());
+}
+
+// --- Main Loop ---
+function loop(timestamp) {
+  if(gameOver || gamePaused) return;
+
+  // Animate yard countdown
+  if(yardStartState==='countdown'){
+    yardStartTimer+=1/60;
+    if(yardStartTimer>=1){
+      yardStartCount++;
+      yardStartTimer=0;
+      if(yardStartCount>=3){
+        yardStartState='playing';
+        playEngineSound();
+      }
+    }
+    draw();
+    drawCountdown();
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  // Game running
+  update();
+  draw();
+
+  requestAnimationFrame(loop);
+}
+
+function update() {
+  // Handle input
+  if(moveInput.up) {player.vy=-player.speed;player.vx=0;player.direction=0;}
+  else if(moveInput.down){player.vy=player.speed;player.vx=0;player.direction=2;}
+  else if(moveInput.left){player.vx=-player.speed;player.vy=0;player.direction=3;}
+  else if(moveInput.right){player.vx=player.speed;player.vy=0;player.direction=1;}
+  else {player.vx=0;player.vy=0;}
+
+  // Apply movement
+  player.x+=player.vx;
+  player.y+=player.vy;
+
+  // Check collision
+  if(checkCollision()){
+    // Crash
+    triggerCrash();
+    return;
+  }
+
+  handleGrass();
+  updateParticles();
+
+  // Check yard completion
+  if(!yardComplete){
+    if(checkAllGrassCut()){
+      yardComplete=true;
+      // Show yard complete message
+      setTimeout(()=>{showYardComplete();},2000);
+    }
+  }
+}
+
+function checkAllGrassCut() {
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      if(grassMap[r][c]) return false;
+    }
+  }
+  return true;
+}
+
+function showYardComplete() {
+  yardStartCount=0;
+  yardStartState='countdown';
+  yardStartTimer=0;
+  yardNumber++;
+  setTimeout(()=>{
+    if(!gameOver) newYard();
+  }, 2000);
+}
+
+function triggerCrash() {
+  // Screen shake
+  shakeTimer=20;
+  // Play crash sound
+  playCrashSound();
+  gameOver=true;
+  // Save high score
+  if(score>highScore){
+    highScore=score;
+    localStorage.setItem('lawnHighScore', highScore);
+    highScoreDisplay.textContent=highScore;
+  }
+  document.getElementById('finalScore').textContent=score;
+  // Sarcastic message
+  const msgs=[
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "Professional gardener? Interesting.",
+    "Grass survived. You didn't.",
+    "Driving lessons recommended.",
+    "You found the only obstacle.",
+    "Breaking News: Lawn mower defeated.",
+    "You had one job.",
+    "Better luck next time.",
+    "Nature wins again.",
+    "Oops! That was close.",
+    "Well, that didn't go well.",
+    "Play again?",
+    "Oops! Crash!",
+    "Grass is resilient.",
+    "Watch out for obstacles.",
+    "Better mowing skills needed.",
+    "That obstacle had a bad day.",
+    "Next time, try harder.",
+    "Game over, man.",
+    "You were so close.",
+    "The lawn misses you.",
+    "Oops, crashed!",
+    "Try again?",
+    "That was an adventure.",
+    "Watch your step.",
+    "Obstacle: 1, You: 0.",
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "You found the only obstacle."
+  ];
+  sarcasticMsg.textContent = msgs[randInt(0,messages.length-1)];
+  document.getElementById('gameOverOverlay').style.display='block';
+  stopEngineSound();
+}
+
+function showCountdown() {
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
+  ctx.fillStyle='#fff';
+  ctx.font='bold 80px monospace';
+  ctx.textAlign='center';
+  ctx.fillText(3 - Math.floor(yardStartCount), WIDTH/2, HEIGHT/2);
+}
+
+function drawCountdown() {
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,WIDTH,HEIGHT);
+  ctx.fillStyle='#fff';
+  ctx.font='bold 80px monospace';
+  ctx.textAlign='center';
+  ctx.fillText(3 - Math.floor(yardStartCount), WIDTH/2, HEIGHT/2);
+}
+
+function draw() {
+  ctx.clearRect(0,0,WIDTH,HEIGHT);
+  drawGrass();
+  drawObstacles();
+  drawParticles();
+  drawPlayer();
+
+  // Draw overlay for countdown
+  if(yardStartState==='countdown'){
+    drawCountdown();
+  }
+}
+
+// --- Crash ---
+let shakeTimer=0;
+function triggerCrash() {
+  shakeTimer=20;
+  playCrashSound();
+  gameOver=true;
+  // Save high score...
+  if(score>highScore){
+    highScore=score;
+    localStorage.setItem('lawnHighScore', highScore);
+    highScoreDisplay.textContent=highScore;
+  }
+  document.getElementById('finalScore').textContent=score;
+  // Sarcastic message
+  const msgs=[
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "Professional gardener? Interesting.",
+    "Grass survived. You didn't.",
+    "Driving lessons recommended.",
+    "You found the only obstacle.",
+    "Breaking News: Lawn mower defeated.",
+    "You had one job.",
+    "Better luck next time.",
+    "Nature wins again.",
+    "Oops! That was close.",
+    "Well, that didn't go well.",
+    "Play again?",
+    "Oops! Crash!",
+    "Grass is resilient.",
+    "Watch out for obstacles.",
+    "Better mowing skills needed.",
+    "That obstacle had a bad day.",
+    "Next time, try harder.",
+    "Game over, man.",
+    "You were so close.",
+    "The lawn misses you.",
+    "Oops, crashed!",
+    "Try again?",
+    "That was an adventure.",
+    "Watch your step.",
+    "Obstacle: 1, You: 0.",
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "You found the only obstacle."
+  ];
+  sarcasticMsg.textContent = msgs[randInt(0,messages.length-1)];
+  document.getElementById('gameOverOverlay').style.display='block';
+  stopEngineSound();
+}
+
+// --- Start ---
+init();
+
+</script>
+</body>
+</html>

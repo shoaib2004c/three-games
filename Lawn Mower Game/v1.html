@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro Lawn Mower Arcade</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: #111;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background-color: #222;
+            border: 4px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            display: block;
+            background-color: #1b4d1b;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 15px;
+        }
+
+        .hud-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 2px 2px #000;
+            color: #ff0;
+        }
+
+        #pause-btn {
+            pointer-events: auto;
+            background: #333;
+            color: #fff;
+            border: 2px solid #777;
+            padding: 5px 12px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+        }
+
+        #pause-btn:hover {
+            background: #555;
+        }
+
+        .screen-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .screen-overlay h1 {
+            font-size: 42px;
+            color: #55ff55;
+            margin-bottom: 20px;
+            text-shadow: 3px 3px #000;
+        }
+
+        .screen-overlay p {
+            font-size: 16px;
+            margin-bottom: 15px;
+            max-width: 500px;
+            line-height: 1.4;
+            color: #ccc;
+        }
+
+        .arcade-btn {
+            background: #ff5555;
+            color: #fff;
+            border: 4px solid #aa0000;
+            padding: 10px 25px;
+            font-size: 20px;
+            font-family: 'Courier New', Courier, monospace;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+            text-transform: uppercase;
+            box-shadow: 0 4px #880000;
+        }
+
+        .arcade-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 #880000;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .instructions {
+            background: #222;
+            border: 2px dashed #555;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .instructions ul {
+            list-style: none;
+            padding-left: 10px;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <!-- HUD Overlay -->
+        <div id="ui-overlay">
+            <div class="hud-row">
+                <div id="hud-yard">YARD: 1</div>
+                <div id="hud-score">SCORE: 0</div>
+                <div id="hud-high">HIGH: 0</div>
+                <button id="pause-btn">Pause</button>
+            </div>
+            <div class="hud-row">
+                <div id="hud-grass">GRASS: 100%</div>
+            </div>
+        </div>
+
+        <!-- Title Screen -->
+        <div id="title-screen" class="screen-overlay">
+            <h1>LAWN MOWER MADNESS</h1>
+            <div class="instructions">
+                <ul>
+                    <li><strong>ARROW KEYS:</strong> Move Mower</li>
+                    <li><strong>GOAL:</strong> Cut 100% of the grass</li>
+                    <li><strong>AVOID:</strong> Walls, Rocks, Trees & Borders</li>
+                </ul>
+            </div>
+            <button class="arcade-btn" id="start-btn">INSERT COIN</button>
+        </div>
+
+        <!-- Pause Menu -->
+        <div id="pause-screen" class="screen-overlay hidden">
+            <h1>PAUSED</h1>
+            <div class="instructions">
+                <ul>
+                    <li><strong>Arrow Keys:</strong> Move</li>
+                    <li><strong>Goal:</strong> Cut every piece of grass</li>
+                    <li><strong>Avoid:</strong> Walls and obstacles</li>
+                    <li><strong>Danger:</strong> Don't leave the lawn</li>
+                </ul>
+            </div>
+            <button class="arcade-btn" id="resume-btn">Resume</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="screen-overlay hidden">
+            <h1 style="color: #ff3333;">GAME OVER</h1>
+            <p id="final-score" style="font-size: 20px; color: #ff0;"></p>
+            <p id="sarcastic-msg" style="font-style: italic; color: #fff; margin: 20px 0; font-size: 18px;"></p>
+            <button class="arcade-btn" id="restart-btn">Play Again</button>
+        </div>
+
+        <!-- Yard Transition Screen -->
+        <div id="transition-screen" class="screen-overlay hidden" style="background: rgba(0,0,0,0.6);">
+            <h1 id="transition-title" style="font-size: 60px; color: #ffff55;">YARD 2</h1>
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTS & CONFIGURATION ---
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const TILE_SIZE = 20;
+        const COLS = CANVAS_WIDTH / TILE_SIZE; // 40
+        const ROWS = CANVAS_HEIGHT / TILE_SIZE; // 30
+
+        const SARCASTIC_MESSAGES = [
+            "You and that rock became best friends.",
+            "The wall disagreed.",
+            "Professional gardener? Interesting.",
+            "Grass survived. You didn't.",
+            "Driving lessons recommended.",
+            "You found the only obstacle.",
+            "Breaking News: Lawn mower defeated.",
+            "You had one job.",
+            "Nature fights back successfully.",
+            "Mower down! Repeat, mower down!",
+            "Did you close your eyes?",
+            "An impressive display of collateral damage.",
+            "That obstacle came out of nowhere, right?",
+            "Landscaping hazard level: Expert.",
+            "Your insurance policy is going to skyrocket.",
+            "A tragic end to a clean cut story.",
+            "Error 404: Mowing skills not found.",
+            "Target acquired: Obstacle hit.",
+            "So much for a pristine lawn.",
+            "Even the weeds are laughing.",
+            "Maybe stick to indoor plants?",
+            "Perpendicular parking into a brick wall.",
+            "Kinetic energy meets immovable object.",
+            "That's one way to stop mowing.",
+            "Your yard work career was brief.",
+            "Task failed successfully.",
+            "Mow hard, crash harder.",
+            "A bold strategy, poorly executed.",
+            "Rest in pieces, lawn mower.",
+            "Clipping grass is hard. Walls are harder."
+        ];
+
+        // --- AUDIO SYSTEM (Web Audio API) ---
+        class SoundManager {
+            constructor() {
+                this.ctx = null;
+                this.engineGain = null;
+                this.engineOsc = null;
+                this.isEngineRunning = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playBeep() {
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(880, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+
+            playCut() {
+                this.init();
+                // Short noise pop for grass cutting
+                const bufferSize = this.ctx.sampleRate * 0.03;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 1000;
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.03);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+
+            playCrash() {
+                this.init();
+                const bufferSize = this.ctx.sampleRate * 0.5;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(300, this.ctx.currentTime);
+                filter.frequency.linearRampToValueAtTime(50, this.ctx.currentTime + 0.5);
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noise.start();
+            }
+
+            startEngine() {
+                if (this.isEngineRunning || !this.ctx) return;
+                this.init();
+                this.engineOsc = this.ctx.createOscillator();
+                this.engineOsc.type = 'sawtooth';
+                this.engineOsc.frequency.setValueAtTime(60, this.ctx.currentTime);
+                
+                this.engineGain = this.ctx.createGain();
+                this.engineGain.gain.setValueAtTime(0.03, this.ctx.currentTime);
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 150;
+
+                this.engineOsc.connect(filter);
+                filter.connect(this.engineGain);
+                this.engineGain.connect(this.ctx.destination);
+                this.engineOsc.start();
+                this.isEngineRunning = true;
+            }
+
+            stopEngine() {
+                if (!this.isEngineRunning) return;
+                try {
+                    this.engineOsc.stop();
+                    this.engineOsc.disconnect();
+                } catch(e) {}
+                this.isEngineRunning = false;
+            }
+        }
+
+        // --- GAME CLASSES ---
+
+        class ParticleSystem {
+            constructor() {
+                this.particles = [];
+            }
+
+            add(x, y, color) {
+                for (let i = 0; i < 3; i++) {
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 2,
+                        life: 15,
+                        color: color
+                    });
+                }
+            }
+
+            update() {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    let p = this.particles[i];
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+                    if (p.life <= 0) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+
+            draw(ctx) {
+                for (let p of this.particles) {
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 2, 2);
+                }
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.sounds = new SoundManager();
+                this.particles = new ParticleSystem();
+
+                this.state = 'TITLE'; // TITLE, COUNTDOWN, PLAYING, PAUSED, TRANSITION, GAMEOVER
+                this.score = 0;
+                this.highScore = parseInt(localStorage.getItem('mower_highscore')) || 0;
+                this.yard = 1;
+                
+                // Grid representation: 0 = uncut grass, 1 = cut grass, 2 = obstacle, 3 = border/wall
+                this.grid = [];
+                this.obstacles = []; // Array of {x, y, type}
+
+                // Mower properties
+                this.mower = {
+                    x: 0,
+                    y: 0,
+                    width: 14,
+                    height: 14,
+                    dir: { x: 0, y: 0 },
+                    nextDir: { x: 0, y: 0 },
+                    speed: 2.0,
+                    angle: 0
+                };
+
+                this.keys = {};
+                this.countdownValue = 3;
+                this.countdownTimer = 0;
+                this.transitionTimer = 0;
+                this.screenShake = 0;
+
+                this.setupListeners();
+                this.updateHUD();
+            }
+
+            setupListeners() {
+                window.addEventListener('keydown', e => {
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                        e.preventDefault();
+                    }
+                    this.keys[e.key] = true;
+
+                    if (this.state === 'PLAYING') {
+                        if (e.key === 'ArrowUp') this.mower.nextDir = { x: 0, y: -1 };
+                        if (e.key === 'ArrowDown') this.mower.nextDir = { x: 0, y: 1 };
+                        if (e.key === 'ArrowLeft') this.mower.nextDir = { x: -1, y: 0 };
+                        if (e.key === 'ArrowRight') this.mower.nextDir = { x: 1, y: 0 };
+                    }
+                });
+
+                window.addEventListener('keyup', e => {
+                    this.keys[e.key] = false;
+                });
+
+                document.getElementById('start-btn').addEventListener('click', () => {
+                    this.sounds.playBeep();
+                    this.startGame();
+                });
+
+                document.getElementById('pause-btn').addEventListener('click', () => {
+                    this.sounds.playBeep();
+                    this.togglePause();
+                });
+
+                document.getElementById('resume-btn').addEventListener('click', () => {
+                    this.sounds.playBeep();
+                    this.togglePause();
+                });
+
+                document.getElementById('restart-btn').addEventListener('click', () => {
+                    this.sounds.playBeep();
+                    this.startGame();
+                });
+            }
+
+            startGame() {
+                this.score = 0;
+                this.yard = 1;
+                this.initYard();
+                document.getElementById('title-screen').classList.add('hidden');
+                document.getElementById('game-over-screen').classList.add('hidden');
+                this.startCountdown();
+            }
+
+            initYard() {
+                // Speed increases slightly per yard, capped for playability
+                this.mower.speed = Math.min(2.0 + (this.yard - 1) * 0.25, 4.0);
+
+                // Initialize grid (all uncut grass)
+                this.grid = [];
+                for (let r = 0; r < ROWS; r++) {
+                    let row = [];
+                    for (let c = 0; c < COLS; c++) {
+                        // Borders are solid walls
+                        if (r === 0 || r === ROWS - 1 || c === 0 || c === COLS - 1) {
+                            row.push(3); 
+                        } else {
+                            row.push(0); // Uncut grass
+                        }
+                    }
+                    this.grid.push(row);
+                }
+
+                // Generate Obstacles based on yard difficulty
+                this.obstacles = [];
+                const obstacleCount = Math.min(5 + this.yard * 3, 40);
+                const types = ['rock', 'brick', 'tree', 'flower', 'log', 'statue'];
+
+                // Place mower safely in top-left inner area
+                this.mower.x = TILE_SIZE * 2 + (TILE_SIZE - this.mower.width) / 2;
+                this.mower.y = TILE_SIZE * 2 + (TILE_SIZE - this.mower.height) / 2;
+                this.mower.dir = { x: 0, y: 0 };
+                this.mower.nextDir = { x: 0, y: 0 };
+
+                let placed = 0;
+                let safety = 0;
+                while (placed < obstacleCount && safety < 1000) {
+                    safety++;
+                    let rc = Math.floor(Math.random() * (ROWS - 4)) + 2;
+                    let cc = Math.floor(Math.random() * (COLS - 4)) + 2;
+
+                    // Keep spawn area clear
+                    if (rc <= 3 && cc <= 3) continue;
+
+                    // Check if already has obstacle
+                    if (this.grid[rc][cc] === 2) continue;
+
+                    this.grid[rc][cc] = 2; // Mark as obstacle tile
+                    let type = types[Math.floor(Math.random() * types.length)];
+                    this.obstacles.push({ r: rc, c: cc, type: type });
+                    placed++;
+                }
+
+                // Cut starting tile immediately
+                let startC = Math.floor((this.mower.x + this.mower.width/2) / TILE_SIZE);
+                let startR = Math.floor((this.mower.y + this.mower.height/2) / TILE_SIZE);
+                if (this.grid[startR][startC] === 0) {
+                    this.grid[startR][startC] = 1;
+                }
+
+                this.updateHUD();
+            }
+
+            startCountdown() {
+                this.state = 'COUNTDOWN';
+                this.countdownValue = 3;
+                this.countdownTimer = 60; // frames
+                this.sounds.startEngine();
+            }
+
+            togglePause() {
+                if (this.state === 'PLAYING') {
+                    this.state = 'PAUSED';
+                    document.getElementById('pause-screen').classList.remove('hidden');
+                    this.sounds.stopEngine();
+                } else if (this.state === 'PAUSED') {
+                    this.state = 'PLAYING';
+                    document.getElementById('pause-screen').classList.add('hidden');
+                    this.sounds.startEngine();
+                }
+            }
+
+            gameOver() {
+                this.state = 'GAMEOVER';
+                this.sounds.stopEngine();
+                this.sounds.playCrash();
+                this.screenShake = 20;
+
+                if (this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('mower_highscore', this.highScore);
+                }
+
+                document.getElementById('final-score').innerText = `SCORE: ${this.score} | HIGH: ${this.highScore}`;
+                let randomMsg = SARCASTIC_MESSAGES[Math.floor(Math.random() * SARCASTIC_MESSAGES.length)];
+                document.getElementById('sarcastic-msg').innerText = `"${randomMsg}"`;
+                document.getElementById('game-over-screen').classList.remove('hidden');
+            }
+
+            nextYard() {
+                this.state = 'TRANSITION';
+                this.sounds.stopEngine();
+                this.score += 500 + (this.yard * 100);
+                this.transitionTimer = 120; // 2 seconds at 60fps
+                
+                let transScreen = document.getElementById('transition-screen');
+                document.getElementById('transition-title').innerText = `YARD ${this.yard + 1}`;
+                transScreen.classList.remove('hidden');
+            }
+
+            updateHUD() {
+                document.getElementById('hud-yard').innerText = `YARD: ${this.yard}`;
+                document.getElementById('hud-score').innerText = `SCORE: ${this.score}`;
+                document.getElementById('hud-high').innerText = `HIGH: ${this.highScore}`;
+
+                // Calculate grass percentage
+                let totalGrass = 0;
+                let cutGrass = 0;
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (this.grid[r][c] === 0 || this.grid[r][c] === 1) {
+                            totalGrass++;
+                            if (this.grid[r][c] === 1) cutGrass++;
+                        }
+                    }
+                }
+                let pct = totalGrass === 0 ? 100 : Math.floor((cutGrass / totalGrass) * 100);
+                document.getElementById('hud-grass').innerText = `GRASS: ${pct}%`;
+            }
+
+            checkCompletion() {
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (this.grid[r][c] === 0) return false;
+                    }
+                }
+                return true;
+            }
+
+            update() {
+                if (this.screenShake > 0) this.screenShake--;
+
+                if (this.state === 'COUNTDOWN') {
+                    this.countdownTimer--;
+                    if (this.countdownTimer <= 0) {
+                        this.countdownTimer = 60;
+                        this.countdownValue--;
+                        if (this.countdownValue < 0) {
+                            this.state = 'PLAYING';
+                        }
+                    }
+                    return;
+                }
+
+                if (this.state === 'TRANSITION') {
+                    this.transitionTimer--;
+                    if (this.transitionTimer <= 0) {
+                        document.getElementById('transition-screen').classList.add('hidden');
+                        this.yard++;
+                        this.initYard();
+                        this.startCountdown();
+                    }
+                    return;
+                }
+
+                if (this.state !== 'PLAYING') return;
+
+                // Handle Direction Changes smoothly on tile grid boundaries
+                let cx = this.mower.x + this.mower.width / 2;
+                let cy = this.mower.y + this.mower.height / 2;
+                let tileC = Math.floor(cx / TILE_SIZE);
+                let tileR = Math.floor(cy / TILE_SIZE);
+
+                // Allow crisp turns when aligned close to center of tile
+                let targetX = tileC * TILE_SIZE + (TILE_SIZE - this.mower.width) / 2;
+                let targetY = tileR * TILE_SIZE + (TILE_SIZE - this.mower.height) / 2;
+
+                if (this.mower.nextDir.x !== 0 || this.mower.nextDir.y !== 0) {
+                    // If turning perpendicular
+                    if (this.mower.nextDir.x !== -this.mower.dir.x || this.mower.nextDir.y !== -this.mower.dir.y) {
+                        if (Math.abs(this.mower.x - targetX) < this.mower.speed && Math.abs(this.mower.y - targetY) < this.mower.speed) {
+                            this.mower.x = targetX;
+                            this.mower.y = targetY;
+                            this.mower.dir = { ...this.mower.nextDir };
+                        }
+                    } else {
+                        // Instant reverse
+                        this.mower.dir = { ...this.mower.nextDir };
+                    }
+                }
+
+                // Move mower
+                this.mower.x += this.mower.dir.x * this.mower.speed;
+                this.mower.y += this.mower.dir.y * this.mower.speed;
+
+                // Set facing angle
+                if (this.mower.dir.x === 1) this.mower.angle = 0;
+                if (this.mower.dir.x === -1) this.mower.angle = Math.PI;
+                if (this.mower.dir.y === 1) this.mower.angle = Math.PI / 2;
+                if (this.mower.dir.y === -1) this.mower.angle = -Math.PI / 2;
+
+                // Collision detection with bounding box points
+                let corners = [
+                    { x: this.mower.x + 2, y: this.mower.y + 2 },
+                    { x: this.mower.x + this.mower.width - 2, y: this.mower.y + 2 },
+                    { x: this.mower.x + 2, y: this.mower.y + this.mower.height - 2 },
+                    { x: this.mower.x + this.mower.width - 2, y: this.mower.y + this.mower.height - 2 }
+                ];
+
+                for (let pt of corners) {
+                    let rc = Math.floor(pt.y / TILE_SIZE);
+                    let cc = Math.floor(pt.x / TILE_SIZE);
+
+                    if (rc < 0 || rc >= ROWS || cc < 0 || cc >= COLS) {
+                        this.gameOver();
+                        return;
+                    }
+
+                    let tileType = this.grid[rc][cc];
+                    if (tileType === 2 || tileType === 3) {
+                        this.gameOver();
+                        return;
+                    }
+                }
+
+                // Grass cutting logic
+                let centerC = Math.floor((this.mower.x + this.mower.width / 2) / TILE_SIZE);
+                let centerR = Math.floor((this.mower.y + this.mower.height / 2) / TILE_SIZE);
+
+                if (this.grid[centerR][centerC] === 0) {
+                    this.grid[centerR][centerC] = 1;
+                    this.score += 10;
+                    this.sounds.playCut();
+                    this.particles.add(this.mower.x + this.mower.width/2, this.mower.y + this.mower.height/2, '#55ff55');
+                    this.updateHUD();
+
+                    if (this.checkCompletion()) {
+                        this.nextYard();
+                        return;
+                    }
+                }
+
+                this.particles.update();
+            }
+
+            drawTile(r, c) {
+                let type = this.grid[r][c];
+                let x = c * TILE_SIZE;
+                let y = r * TILE_SIZE;
+
+                if (type === 0) {
+                    // Uncut grass (Bright green with slight texture variation)
+                    this.ctx.fillStyle = '#1e7a1e';
+                    this.ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    this.ctx.fillStyle = '#249624';
+                    if ((r + c) % 2 === 0) {
+                        this.ctx.fillRect(x + 4, y + 4, 4, 4);
+                        this.ctx.fillRect(x + 12, y + 12, 4, 4);
+                    }
+                } else if (type === 1) {
+                    // Cut grass (Dark green)
+                    this.ctx.fillStyle = '#145214';
+                    this.ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                } else if (type === 3) {
+                    // Outside border wall
+                    this.ctx.fillStyle = '#555555';
+                    this.ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    this.ctx.fillStyle = '#777777';
+                    this.ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                }
+            }
+
+            drawObstacles() {
+                for (let obs of this.obstacles) {
+                    let x = obs.c * TILE_SIZE;
+                    let y = obs.r * TILE_SIZE;
+
+                    if (obs.type === 'rock') {
+                        this.ctx.fillStyle = '#888888';
+                        this.ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        this.ctx.fillStyle = '#aaaaaa';
+                        this.ctx.fillRect(x + 4, y + 4, 4, 4);
+                        this.ctx.fillStyle = '#555555';
+                        this.ctx.fillRect(x + 10, y + 10, 6, 6);
+                    } else if (obs.type === 'brick') {
+                        this.ctx.fillStyle = '#aa3333';
+                        this.ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        this.ctx.fillStyle = '#cc5555';
+                        this.ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, 6);
+                        this.ctx.fillRect(x + 2, y + 11, TILE_SIZE - 4, 6);
+                        this.ctx.fillStyle = '#551111';
+                        this.ctx.fillRect(x + 9, y + 2, 2, 6);
+                        this.ctx.fillRect(x + 5, y + 11, 2, 6);
+                    } else if (obs.type === 'tree') {
+                        this.ctx.fillStyle = '#8b5a2b'; // trunk
+                        this.ctx.fillRect(x + 7, y + 7, 6, 6);
+                        this.ctx.fillStyle = '#006600'; // leaves
+                        this.ctx.fillRect(x + 3, y + 3, 14, 14);
+                        this.ctx.fillStyle = '#008800';
+                        this.ctx.fillRect(x + 5, y + 5, 10, 10);
+                    } else if (obs.type === 'flower') {
+                        this.ctx.fillStyle = '#228b22';
+                        this.ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        this.ctx.fillStyle = '#ff3399';
+                        this.ctx.fillRect(x + 4, y + 4, 5, 5);
+                        this.ctx.fillRect(x + 11, y + 10, 5, 5);
+                        this.ctx.fillStyle = '#ffcc00';
+                        this.ctx.fillRect(x + 6, y + 6, 2, 2);
+                        this.ctx.fillRect(x + 13, y + 12, 2, 2);
+                    } else if (obs.type === 'log') {
+                        this.ctx.fillStyle = '#5c4033';
+                        this.ctx.fillRect(x + 2, y + 5, TILE_SIZE - 4, 10);
+                        this.ctx.fillStyle = '#8b5a2b';
+                        this.ctx.fillRect(x + 4, y + 7, TILE_SIZE - 8, 6);
+                        this.ctx.fillStyle = '#d2b48c'; // rings
+                        this.ctx.fillRect(x + 4, y + 9, 2, 2);
+                    } else if (obs.type === 'statue') {
+                        this.ctx.fillStyle = '#999999';
+                        this.ctx.fillRect(x + 5, y + 5, 10, 14);
+                        this.ctx.fillStyle.fillRect = '#bbbbbb';
+                        this.ctx.fillRect(x + 7, y + 2, 6, 6);
+                    }
+                }
+            }
+
+            drawMower() {
+                this.ctx.save();
+                this.ctx.translate(this.mower.x + this.mower.width / 2, this.mower.y + this.mower.height / 2);
+                this.ctx.rotate(this.mower.angle);
+
+                // Mower Body (Red retro arcade style)
+                this.ctx.fillStyle = '#cc2222';
+                this.ctx.fillRect(-7, -7, 14, 14);
+
+                // Engine / Details
+                this.ctx.fillStyle = '#dddddd';
+                this.ctx.fillRect(-3, -3, 6, 6);
+                this.ctx.fillStyle = '#111111';
+                this.ctx.fillRect(-1, -5, 2, 3); // Exhaust pipe
+
+                // Wheels
+                this.ctx.fillStyle = '#111111';
+                this.ctx.fillRect(-8, -8, 4, 3);
+                this.ctx.fillRect(4, -8, 4, 3);
+                this.ctx.fillRect(-8, 5, 4, 3);
+                this.ctx.fillRect(4, 5, 4, 3);
+
+                this.ctx.restore();
+            }
+
+            draw() {
+                this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                this.ctx.save();
+                if (this.screenShake > 0) {
+                    let shakeX = (Math.random() - 0.5) * this.screenShake;
+                    let shakeY = (Math.random() - 0.5) * this.screenShake;
+                    this.ctx.translate(shakeX, shakeY);
+                }
+
+                // Draw Grid
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        this.drawTile(r, c);
+                    }
+                }
+
+                // Draw Obstacles
+                this.drawObstacles();
+
+                // Draw Particles
+                this.particles.draw(this.ctx);
+
+                // Draw Mower
+                if (this.state !== 'GAMEOVER' || Math.floor(Date.now() / 100) % 2 === 0) {
+                    this.drawMower();
+                }
+
+                // Draw Countdown overlay text if active
+                if (this.state === 'COUNTDOWN') {
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                    this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                    this.ctx.font = 'bold 60px "Courier New", Courier, monospace';
+                    this.ctx.fillStyle = '#ffff55';
+                    this.ctx.textAlign = 'center';
+                    let text = this.countdownValue > 0 ? this.countdownValue : 'GO!';
+                    this.ctx.fillText(text, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+                }
+
+                this.ctx.restore();
+            }
+
+            loop() {
+                this.update();
+                this.draw();
+                requestAnimationFrame(() => this.loop());
+            }
+        }
+
+        // --- LAUNCH GAME ---
+        window.onload = () => {
+            const game = new Game();
+            game.loop();
+        };
+    </script>
+</body>
+</html>

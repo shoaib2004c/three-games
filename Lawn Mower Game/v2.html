@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Retro Lawn Mower</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    user-select: none;
+  }
+
+  #gameContainer {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+
+  /* retro CRT scanline overlay */
+  #scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 1px,
+      rgba(0,0,0,0.18) 2px,
+      rgba(0,0,0,0.18) 3px
+    );
+    mix-blend-mode: multiply;
+  }
+  #vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 6;
+    box-shadow: inset 0 0 min(15vw,15vh) rgba(0,0,0,0.55);
+  }
+
+  #ui {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    color: #d8ffb0;
+    font-size: 16px;
+    background: rgba(0,0,0,0.55);
+    padding: 8px 12px;
+    border: 2px solid #7cfc00;
+    border-radius: 4px;
+    text-shadow: 1px 1px 0 #000;
+    letter-spacing: 1px;
+  }
+
+  #pauseOverlay, #gameOverOverlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10,20,10,0.95);
+    color: #d8ffb0;
+    padding: 24px 28px;
+    border: 3px solid #7cfc00;
+    border-radius: 6px;
+    display: none;
+    max-width: 90%;
+    text-align: center;
+    font-size: 16px;
+    z-index: 20;
+    letter-spacing: 1px;
+    box-shadow: 0 0 20px rgba(124,252,0,0.4);
+  }
+  #pauseOverlay h2, #gameOverOverlay h2 {
+    margin-top: 0;
+    color: #ffcc00;
+    text-shadow: 2px 2px 0 #000;
+  }
+  button {
+    margin: 8px;
+    padding: 10px 18px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    cursor: pointer;
+    background: #7cfc00;
+    color: #003300;
+    border: 2px solid #003300;
+    border-radius: 3px;
+    font-weight: bold;
+  }
+  button:hover {
+    background: #a4ff33;
+  }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+  <canvas id="gameCanvas"></canvas>
+</div>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<div id="ui">
+  SCORE: <span id="scoreDisplay">0</span><br>
+  HIGH SCORE: <span id="highScoreDisplay">0</span><br>
+  TIME: <span id="timeDisplay">00:00</span><br>
+  <button id="pauseBtn">Pause</button>
+</div>
+
+<div id="pauseOverlay">
+  <h2>PAUSED</h2>
+  <p>ARROW KEYS = MOVE</p>
+  <p>Mow all the grass. Avoid rocks, walls, trees &amp; the edge of the yard!</p>
+  <button id="resumeBtn">Resume</button>
+</div>
+
+<div id="gameOverOverlay">
+  <h2>GAME OVER</h2>
+  <p>SCORE: <span id="finalScore">0</span></p>
+  <p>TIME: <span id="finalTime">00:00</span></p>
+  <p id="sarcasticMsg"></p>
+  <button id="restartBtn">Try Again</button>
+</div>
+
+<script>
+  // ---------- Setup ----------
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const highScoreDisplay = document.getElementById('highScoreDisplay');
+  const timeDisplay = document.getElementById('timeDisplay');
+  const pauseOverlay = document.getElementById('pauseOverlay');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const sarcasticMsg = document.getElementById('sarcasticMsg');
+
+  // Low internal resolution -> stretched via CSS to full browser = crunchy retro pixels
+  const GAME_W = 320;
+  const GAME_H = 240;
+  canvas.width = GAME_W;
+  canvas.height = GAME_H;
+
+  const TILE_SIZE = 16;
+  const COLS = GAME_W / TILE_SIZE; // 20
+  const ROWS = GAME_H / TILE_SIZE; // 15
+
+  // ---------- Game State ----------
+  let gamePaused = false;
+  let gameOver = false;
+
+  let score = 0;
+  let highScore = parseInt(localStorage.getItem('lawnHighScore') || '0', 10);
+
+  let grassMap = [];
+  let grassAnim = []; // 0 = just-cut (bright flash), 1 = fully settled into the mowed pastel color
+  let obstacles = [];
+  let particles = [];
+
+  let waveNumber = 0; // internal difficulty counter, never shown to the player
+  let roundState = 'countdown'; // 'countdown', 'playing', 'clearing'
+  let countdownValue = 3;
+  let countdownTimer = 0;
+
+  let shakeTimer = 0;
+
+  let elapsedFrames = 0; // counts only while actively mowing (not during countdown/pause) -- this is the "how long it took" clock
+
+  function formatTime(frames) {
+    const totalSeconds = Math.floor(frames / 60);
+    const mm = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+    const ss = (totalSeconds % 60).toString().padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  const player = {
+    x: 0, y: 0,
+    width: TILE_SIZE * 0.75,
+    height: TILE_SIZE * 0.75,
+    speed: 1.1,
+    vx: 0, vy: 0,
+    direction: 0 // 0 up, 1 right, 2 down, 3 left
+  };
+
+  let moveInput = { up: false, down: false, left: false, right: false };
+
+  // ---------- Audio ----------
+  const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = new AudioCtxClass();
+
+  function playBeep(freq, duration = 0.08, volume = 0.15, type = 'square') {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.stop(audioCtx.currentTime + duration);
+  }
+
+  function playGrassCutSound() {
+    playBeep(500 + Math.random() * 150, 0.05, 0.06);
+  }
+
+  function playCrashSound() {
+    playBeep(90, 0.35, 0.25, 'sawtooth');
+  }
+
+  function playWaveClearSound() {
+    // a cheerful little rising jingle when a wave finishes
+    playBeep(660, 0.09, 0.12);
+    setTimeout(() => playBeep(880, 0.12, 0.12), 90);
+  }
+
+  // ---------- Utility ----------
+  function randInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  // ---------- Setup / regenerate world ----------
+  function resetPlayer() {
+    player.x = Math.floor(COLS / 2) * TILE_SIZE + TILE_SIZE / 2;
+    player.y = Math.floor(ROWS / 2) * TILE_SIZE + TILE_SIZE / 2;
+    player.vx = 0;
+    player.vy = 0;
+  }
+
+  function generateGrass() {
+    grassMap = [];
+    grassAnim = [];
+    for (let r = 0; r < ROWS; r++) {
+      grassMap[r] = [];
+      grassAnim[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        grassMap[r][c] = true; // uncut
+        grassAnim[r][c] = 1;
+      }
+    }
+  }
+
+  function generateObstacles() {
+    obstacles = [];
+    const obstacleCount = Math.min(6 + waveNumber * 2, 34);
+    const centerC = Math.floor(COLS / 2);
+    const centerR = Math.floor(ROWS / 2);
+
+    for (let i = 0; i < obstacleCount; i++) {
+      const typeRand = Math.random();
+      let type = 'rock';
+      if (typeRand < 0.28) type = 'rock';
+      else if (typeRand < 0.55) type = 'wall';
+      else if (typeRand < 0.72) type = 'tree';
+      else if (typeRand < 0.83) type = 'flower';
+      else if (typeRand < 0.93) type = 'log';
+      else type = 'statue';
+
+      let x, y, tries = 0, valid = false;
+      while (!valid && tries < 40) {
+        x = randInt(1, COLS - 2);
+        y = randInt(1, ROWS - 2);
+        tries++;
+        const nearCenter = Math.abs(x - centerC) < 2 && Math.abs(y - centerR) < 2;
+        const overlaps = obstacles.some(o => o.x === x && o.y === y);
+        valid = !nearCenter && !overlaps;
+      }
+      if (valid) obstacles.push({ x, y, type });
+    }
+  }
+
+  function startNewWave(keepScore) {
+    waveNumber++;
+    if (!keepScore) score = 0;
+    scoreDisplay.textContent = score;
+    generateGrass();
+    generateObstacles();
+    resetPlayer();
+    particles = [];
+    player.speed = Math.min(1.1 + waveNumber * 0.08, 3.2);
+
+    countdownValue = 3;
+    countdownTimer = 0;
+    roundState = 'countdown';
+  }
+
+  // ---------- Drawing helpers (pixel-art style) ----------
+  function hexToRgb(hex) {
+    const v = parseInt(hex.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  function lerpColor(c1, c2, t) {
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+    const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+    const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // Uncut = deeper garden green. Mowed = light, bright, candy-fresh pastel lime -- satisfying to reveal.
+  const UNCUT_A = hexToRgb('#3a9a2e');
+  const UNCUT_B = hexToRgb('#358c2a');
+  const MOWED_A = hexToRgb('#d9ffb0');
+  const MOWED_B = hexToRgb('#c9fca0');
+  const POP_FLASH = hexToRgb('#ffffff');
+
+  function drawGrassTile(r, c) {
+    const x = c * TILE_SIZE;
+    const y = r * TILE_SIZE;
+    const uncut = grassMap[r][c];
+    const checker = (r + c) % 2 === 0;
+
+    if (uncut) {
+      ctx.fillStyle = checker ? '#3a9a2e' : '#358c2a';
+      ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+      // deterministic little "blade" pixels for texture
+      ctx.fillStyle = checker ? '#4fb83f' : '#2f7d26';
+      const seed = (r * 7 + c * 13) % 4;
+      if (seed === 0) { ctx.fillRect(x + 3, y + 3, 1, 4); ctx.fillRect(x + 10, y + 7, 1, 4); }
+      else if (seed === 1) { ctx.fillRect(x + 5, y + 2, 1, 3); ctx.fillRect(x + 12, y + 9, 1, 3); }
+      else if (seed === 2) { ctx.fillRect(x + 7, y + 5, 1, 4); ctx.fillRect(x + 2, y + 10, 1, 3); }
+      else { ctx.fillRect(x + 9, y + 3, 1, 3); ctx.fillRect(x + 4, y + 8, 1, 4); }
+    } else {
+      // smoothly fade from deep grass -> light pastel mowed color, with a bright pop the instant it's cut
+      const t = grassAnim[r][c] === undefined ? 1 : grassAnim[r][c];
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out, feels snappier/more satisfying
+      const from = checker ? UNCUT_A : UNCUT_B;
+      const to = checker ? MOWED_A : MOWED_B;
+      const base = lerpColor(from, to, eased);
+      ctx.fillStyle = base;
+      ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+      if (t < 1) {
+        // quick white glow flash right at the moment of the cut, fading out fast
+        const flashT = Math.max(0, 1 - t * 2.2);
+        if (flashT > 0) {
+          ctx.fillStyle = lerpColor(to, POP_FLASH, flashT);
+          ctx.globalAlpha = flashT;
+          ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+          ctx.globalAlpha = 1;
+        }
+      } else {
+        // subtle mowed stripe highlight once settled, for a crisp fresh-cut look
+        ctx.fillStyle = checker ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)';
+        ctx.fillRect(x, y, TILE_SIZE, 2);
+      }
+    }
+  }
+
+  function drawGrass() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        drawGrassTile(r, c);
+      }
+    }
+  }
+
+  function updateGrassAnim() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (!grassMap[r][c] && grassAnim[r][c] < 1) {
+          grassAnim[r][c] = Math.min(1, grassAnim[r][c] + 0.12);
+        }
+      }
+    }
+  }
+
+  function drawObstacle(ob) {
+    const x = ob.x * TILE_SIZE;
+    const y = ob.y * TILE_SIZE;
+    switch (ob.type) {
+      case 'rock':
+        ctx.fillStyle = '#6e6e6e';
+        ctx.fillRect(x + 2, y + 4, TILE_SIZE - 4, TILE_SIZE - 6);
+        ctx.fillStyle = '#8a8a8a';
+        ctx.fillRect(x + 4, y + 5, 5, 3);
+        ctx.fillStyle = '#4a4a4a';
+        ctx.fillRect(x + 3, y + TILE_SIZE - 5, TILE_SIZE - 6, 2);
+        break;
+      case 'wall':
+        ctx.fillStyle = '#9c4a2e';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        ctx.fillStyle = '#7a3a22';
+        ctx.fillRect(x, y + 5, TILE_SIZE, 1);
+        ctx.fillRect(x, y + 11, TILE_SIZE, 1);
+        ctx.fillRect(x + 4, y, 1, 5);
+        ctx.fillRect(x + 12, y, 1, 5);
+        ctx.fillRect(x + 8, y + 5, 1, 6);
+        ctx.fillRect(x + 4, y + 11, 1, 5);
+        ctx.fillRect(x + 12, y + 11, 1, 5);
+        break;
+      case 'tree':
+        ctx.fillStyle = '#6b4423';
+        ctx.fillRect(x + 6, y + 9, 4, 7);
+        ctx.fillStyle = '#1f5c1f';
+        ctx.fillRect(x + 2, y + 1, 12, 9);
+        ctx.fillStyle = '#2f7d2f';
+        ctx.fillRect(x + 4, y + 2, 4, 3);
+        ctx.fillRect(x + 9, y + 5, 4, 3);
+        break;
+      case 'flower':
+        ctx.fillStyle = '#2f7d26';
+        ctx.fillRect(x + 7, y + 8, 2, 6);
+        ctx.fillStyle = '#ff69b4';
+        ctx.fillRect(x + 5, y + 4, 2, 2);
+        ctx.fillRect(x + 9, y + 4, 2, 2);
+        ctx.fillRect(x + 7, y + 2, 2, 2);
+        ctx.fillRect(x + 7, y + 6, 2, 2);
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(x + 7, y + 4, 2, 2);
+        break;
+      case 'log':
+        ctx.fillStyle = '#7a4a25';
+        ctx.fillRect(x + 1, y + 6, TILE_SIZE - 2, 5);
+        ctx.fillStyle = '#5c3618';
+        ctx.fillRect(x + 1, y + 7, TILE_SIZE - 2, 1);
+        ctx.fillStyle = '#a3652f';
+        ctx.fillRect(x + 2, y + 6, 2, 5);
+        ctx.fillRect(x + 11, y + 6, 2, 5);
+        break;
+      case 'statue':
+        ctx.fillStyle = '#8a8a8a';
+        ctx.fillRect(x + 3, y + 12, 10, 3);
+        ctx.fillStyle = '#a0a0a0';
+        ctx.fillRect(x + 5, y + 2, 6, 10);
+        ctx.fillStyle = '#c2c2c2';
+        ctx.fillRect(x + 6, y + 3, 4, 2);
+        break;
+    }
+  }
+
+  function drawObstacles() {
+    for (const ob of obstacles) drawObstacle(ob);
+  }
+
+  function drawPlayer() {
+    const x = Math.round(player.x - player.width / 2);
+    const y = Math.round(player.y - player.height / 2);
+    const w = player.width, h = player.height;
+
+    // wheels
+    ctx.fillStyle = '#222';
+    ctx.fillRect(x - 1, y - 1, 3, 3);
+    ctx.fillRect(x + w - 2, y - 1, 3, 3);
+    ctx.fillRect(x - 1, y + h - 2, 3, 3);
+    ctx.fillRect(x + w - 2, y + h - 2, 3, 3);
+
+    // body
+    ctx.fillStyle = '#ffcc00';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#e6b800';
+    ctx.fillRect(x + 1, y + 1, w - 2, 2);
+
+    // spinning blade hint (center)
+    ctx.fillStyle = '#cc3333';
+    ctx.fillRect(x + w / 2 - 1, y + h / 2 - 1, 2, 2);
+
+    // direction handle
+    ctx.fillStyle = '#333';
+    const cx = x + w / 2, cy = y + h / 2;
+    if (player.direction === 0) ctx.fillRect(cx - 1, y - 3, 2, 3);
+    else if (player.direction === 2) ctx.fillRect(cx - 1, y + h, 2, 3);
+    else if (player.direction === 3) ctx.fillRect(x - 3, cy - 1, 3, 2);
+    else if (player.direction === 1) ctx.fillRect(x + w, cy - 1, 3, 2);
+  }
+
+  const SPARKLE_COLORS = ['#ffffff', '#fff6b0', '#d9ffb0', '#c9fca0'];
+
+  function createParticles(x, y) {
+    for (let i = 0; i < 6; i++) {
+      particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * 1.8,
+        vy: (Math.random() - 0.5) * 1.8 - 0.4,
+        life: 16,
+        maxLife: 16,
+        color: SPARKLE_COLORS[randInt(0, SPARKLE_COLORS.length - 1)]
+      });
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function updateParticles() {
+    for (const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life--;
+    }
+    particles = particles.filter(p => p.life > 0);
+  }
+
+  function drawCountdown() {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 48px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = countdownValue > 0 ? String(countdownValue) : 'GO!';
+    ctx.fillText(label, GAME_W / 2, GAME_H / 2);
+  }
+
+  function draw() {
+    ctx.save();
+    if (shakeTimer > 0) {
+      const dx = (Math.random() - 0.5) * 6;
+      const dy = (Math.random() - 0.5) * 6;
+      ctx.translate(dx, dy);
+    }
+    ctx.clearRect(-8, -8, GAME_W + 16, GAME_H + 16);
+    drawGrass();
+    drawObstacles();
+    drawParticles();
+    drawPlayer();
+    ctx.restore();
+
+    if (roundState === 'countdown') drawCountdown();
+  }
+
+  // ---------- Collision / logic ----------
+  function isObstacleAt(x, y) {
+    for (const ob of obstacles) {
+      if (ob.x === x && ob.y === y) return ob;
+    }
+    return null;
+  }
+
+  function checkCollision() {
+    // hitting the edge of the yard = game over
+    if (player.x - player.width / 2 < 0 || player.x + player.width / 2 > GAME_W ||
+        player.y - player.height / 2 < 0 || player.y + player.height / 2 > GAME_H) {
+      return true;
+    }
+    // hitting an obstacle = game over
+    const tileX = Math.floor(player.x / TILE_SIZE);
+    const tileY = Math.floor(player.y / TILE_SIZE);
+    if (isObstacleAt(tileX, tileY)) return true;
+    return false;
+  }
+
+  function handleGrass() {
+    const c = Math.floor(player.x / TILE_SIZE);
+    const r = Math.floor(player.y / TILE_SIZE);
+    if (r >= 0 && r < ROWS && c >= 0 && c < COLS && grassMap[r][c]) {
+      grassMap[r][c] = false;
+      grassAnim[r][c] = 0;
+      score += 10;
+      scoreDisplay.textContent = score;
+      createParticles(c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2);
+      playGrassCutSound();
+    }
+  }
+
+  function checkAllGrassCut() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (grassMap[r][c]) return false;
+      }
+    }
+    return true;
+  }
+
+  const SARCASTIC_MESSAGES = [
+    "You and that rock became best friends.",
+    "The wall disagreed.",
+    "Professional gardener? Interesting.",
+    "Grass survived. You didn't.",
+    "Driving lessons recommended.",
+    "You found the only obstacle.",
+    "Breaking News: Lawn mower defeated.",
+    "You had one job.",
+    "Better luck next time.",
+    "Nature wins again.",
+    "Well, that didn't go well.",
+    "Grass is resilient.",
+    "That obstacle had a bad day.",
+    "Game over, man.",
+    "You were so close.",
+    "The lawn misses you.",
+    "Obstacle: 1, You: 0.",
+    "You mowed the fence. Bold strategy."
+  ];
+
+  function triggerCrash() {
+    shakeTimer = 16;
+    playCrashSound();
+    gameOver = true;
+
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('lawnHighScore', String(highScore));
+      highScoreDisplay.textContent = highScore;
+    }
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalTime').textContent = formatTime(elapsedFrames);
+    sarcasticMsg.textContent = SARCASTIC_MESSAGES[randInt(0, SARCASTIC_MESSAGES.length - 1)];
+    gameOverOverlay.style.display = 'block';
+    draw(); // render the crash frame with shake before the overlay takes focus
+  }
+
+  function restartGame() {
+    gameOver = false;
+    gameOverOverlay.style.display = 'none';
+    waveNumber = 0;
+    elapsedFrames = 0;
+    timeDisplay.textContent = formatTime(0);
+    startNewWave(false);
+    requestAnimationFrame(loop);
+  }
+
+  function pauseGame() {
+    if (gameOver) return;
+    gamePaused = true;
+    pauseOverlay.style.display = 'block';
+  }
+
+  function resumeGame() {
+    gamePaused = false;
+    pauseOverlay.style.display = 'none';
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  function setupInput() {
+    window.addEventListener('keydown', e => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+      if (e.key === 'ArrowUp') moveInput.up = true;
+      if (e.key === 'ArrowDown') moveInput.down = true;
+      if (e.key === 'ArrowLeft') moveInput.left = true;
+      if (e.key === 'ArrowRight') moveInput.right = true;
+      if (e.key === 'Escape') { gamePaused ? resumeGame() : pauseGame(); }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }, { passive: false });
+    window.addEventListener('keyup', e => {
+      if (e.key === 'ArrowUp') moveInput.up = false;
+      if (e.key === 'ArrowDown') moveInput.down = false;
+      if (e.key === 'ArrowLeft') moveInput.left = false;
+      if (e.key === 'ArrowRight') moveInput.right = false;
+    });
+    document.getElementById('pauseBtn').addEventListener('click', () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      pauseGame();
+    });
+    document.getElementById('resumeBtn').addEventListener('click', () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      resumeGame();
+    });
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      restartGame();
+    });
+  }
+
+  // ---------- Main loop ----------
+  function loop() {
+    if (gameOver || gamePaused) return;
+
+    if (roundState === 'countdown') {
+      countdownTimer += 1 / 60;
+      if (countdownTimer >= 0.6) {
+        countdownTimer = 0;
+        countdownValue--;
+        if (countdownValue < 0) {
+          roundState = 'playing';
+        }
+      }
+      draw();
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    update();
+    if (!gameOver) draw();
+    if (shakeTimer > 0) shakeTimer--;
+    if (!gameOver) requestAnimationFrame(loop);
+  }
+
+  function update() {
+    elapsedFrames++;
+    timeDisplay.textContent = formatTime(elapsedFrames);
+
+    if (moveInput.up) { player.vy = -player.speed; player.vx = 0; player.direction = 0; }
+    else if (moveInput.down) { player.vy = player.speed; player.vx = 0; player.direction = 2; }
+    else if (moveInput.left) { player.vx = -player.speed; player.vy = 0; player.direction = 3; }
+    else if (moveInput.right) { player.vx = player.speed; player.vy = 0; player.direction = 1; }
+    else { player.vx = 0; player.vy = 0; }
+
+    player.x += player.vx;
+    player.y += player.vy;
+
+    if (checkCollision()) {
+      triggerCrash();
+      return;
+    }
+
+    handleGrass();
+    updateParticles();
+    updateGrassAnim();
+
+    if (roundState === 'playing' && checkAllGrassCut()) {
+      // regenerate everything: more obstacles, a bit more speed, no level counter shown
+      roundState = 'clearing';
+      playWaveClearSound();
+      setTimeout(() => {
+        if (!gameOver) startNewWave(true);
+      }, 800);
+    }
+  }
+
+  // ---------- Start ----------
+  function init() {
+    highScoreDisplay.textContent = highScore;
+    setupInput();
+    startNewWave(false);
+    requestAnimationFrame(loop);
+  }
+
+  init();
+</script>
+</body>
+</html>
